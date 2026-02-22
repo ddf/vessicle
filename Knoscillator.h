@@ -80,7 +80,7 @@ public:
       for (size_t y = 0; y < noiseDim; ++y)
       {
         size_t i = x * noiseDim + y;
-        noiseTable.set(i, perlin2d(x*noiseStep, y*noiseStep, 1, 4) * 2 - 1);
+        noiseTable.set(i, vessicle::perlin2d(x*noiseStep, y*noiseStep, 1, 4) * 2 - 1);
       }
     }
   }

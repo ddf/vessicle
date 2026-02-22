@@ -11,7 +11,7 @@ struct CartesianFloat
   
   constexpr CartesianFloat() : x(0), y(0), z(0) {}
   constexpr CartesianFloat(const CartesianFloat&) = default;
-  constexpr CartesianFloat(float x, float y, float z) : x(x), y(y), z(z) {}
+  constexpr CartesianFloat(float inX, float inY, float inZ) : x(inX), y(inY),  z(inZ) {}
   constexpr CartesianFloat(CartesianFloat&&) = default;
   ~CartesianFloat() = default;
   

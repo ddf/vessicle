@@ -25,6 +25,7 @@ public:
   using knot_p    = vessl::param<KnotType>;
   
 private:
+  static constexpr float PI = vessl::math::pi<float>();
   static constexpr float TWO_PI = vessl::math::twoPi<float>();
   
   struct
@@ -64,7 +65,7 @@ public:
     static constexpr int TFOIL = static_cast<int>(KnotType::TFOIL);
     x1[TFOIL] = 1;
     x2[TFOIL] = 2;
-    x3[TFOIL] = 3 * M_PI / 2;
+    x3[TFOIL] = 3 * PI / 2;
     y1[TFOIL] = 1;
     y2[TFOIL] = 0;
     y3[TFOIL] = -2;
@@ -86,7 +87,7 @@ public:
     x2[LISSA] = 2;
     x3[LISSA] = TWO_PI;
     y1[LISSA] = 2;
-    y2[LISSA] = M_PI * 3;
+    y2[LISSA] = PI * 3;
     y3[LISSA] = 0;
     z1[LISSA] = 0;
     z2[LISSA] = 1;

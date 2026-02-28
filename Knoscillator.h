@@ -145,8 +145,8 @@ public:
 
     float st = phaseS + fm*vessl::math::twoPi<float>();
     float nz = nVol * noise(coord.x, coord.y);
-    coord.x += vessl::math::cos(st)*sVol + coord.x * nz;
-    coord.y += vessl::math::sin(st)*sVol + coord.y * nz;
+    coord.x += vessl::math::cosr(st)*sVol + coord.x * nz;
+    coord.y += vessl::math::sinr(st)*sVol + coord.y * nz;
     coord.z += coord.z * nz;
 
     float projection = 1.0f / (coord.z + zoom.value);
@@ -161,9 +161,9 @@ public:
     stepPhase(rotateY, stepRate * rotateBaseFreq * ryf);
     stepPhase(rotateZ, stepRate * rotateBaseFreq * rzf);
   
-    params.rotationX.value = vessl::math::sin(rotateX + rxm);
-    params.rotationY.value = vessl::math::cos(rotateY + rym);
-    params.rotationZ.value = vessl::math::sin(rotateZ + rzm);
+    params.rotationX.value = vessl::math::sinr(rotateX + rxm);
+    params.rotationY.value = vessl::math::cosr(rotateY + rym);
+    params.rotationZ.value = vessl::math::sinr(rotateZ + rzm);
   
     return out;
   }

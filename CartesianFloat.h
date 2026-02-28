@@ -29,9 +29,9 @@ struct CartesianFloat
 
   void setSpherical(float radius, float inclination, float azimuth)
   {
-    x = radius * vessl::math::cos(azimuth) * vessl::math::sin(inclination);
-    y = radius * vessl::math::sin(azimuth) * vessl::math::sin(inclination);
-    z = radius * vessl::math::cos(inclination);
+    x = radius * vessl::math::cosr(azimuth) * vessl::math::sinr(inclination);
+    y = radius * vessl::math::sinr(azimuth) * vessl::math::sinr(inclination);
+    z = radius * vessl::math::cosr(inclination);
   }
 
   CartesianFloat& operator=(const CartesianFloat& other)  = default;

@@ -61,14 +61,14 @@ public:
 
   void setEuler(float pitch, float yaw, float roll)
   {
-    float cosa = vessl::math::cos(roll);
-    float sina = vessl::math::sin(roll);
+    float cosa = vessl::math::cosr(roll);
+    float sina = vessl::math::sinr(roll);
 
-    float cosb = vessl::math::cos(yaw);
-    float sinb = vessl::math::sin(yaw);
+    float cosb = vessl::math::cosr(yaw);
+    float sinb = vessl::math::sinr(yaw);
 
-    float cosc = vessl::math::cos(pitch);
-    float sinc = vessl::math::sin(pitch);
+    float cosc = vessl::math::cosr(pitch);
+    float sinc = vessl::math::sinr(pitch);
 
     matrix[0][0] = cosa * cosb;
     matrix[0][1] = cosa * sinb*sinc - sina * cosc;

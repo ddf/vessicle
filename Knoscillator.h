@@ -1,7 +1,6 @@
 #pragma once
 
 #include "KnotOscillator.h"
-#include "CartesianTransform.h"
 #include "Noise.hpp"
 #include "vessl/vessl.h"
 
@@ -14,10 +13,13 @@ public:
   
 private:
   using SineOscillator = vessl::oscil<vessl::waves::sine<>>;
+  using KnotOscil = KnotOscillator<T>;
   using SmoothFloat = vessl::smoother<>;
+  using Transform = vessl::transform33<T>;
   using size_t = vessl::size_t;
   using param = vessl::parameter;
   using analog_p = vessl::analog_p;
+  using coord_t = typename KnotOscil::coord_t;
   
   static constexpr size_t noiseDim = 128;
   static constexpr float  noiseStep = 4.0f / noiseDim;
@@ -29,8 +31,8 @@ private:
   using NoiseTable = vessl::wavetable<float, noiseDim*noiseDim>;
 
   SineOscillator kpm;
-  KnotOscillator knoscil;
-  Rotation3D     rotator;
+  KnotOscil      knoscil;
+  Transform      rotator;
   SmoothFloat    zoom;
 
   float stepRate;
@@ -139,7 +141,7 @@ public:
     knoscil.frequency() = freq;
     knoscil.phaseMod()  = fm;
 
-    CartesianFloat coord = knoscil.generate();
+    coord_t coord = knoscil.generate();
     rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     coord = rotator.process(coord);
 

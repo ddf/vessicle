@@ -1,9 +1,9 @@
 #pragma once
 
-#include "CartesianFloat.h"
 #include "vessl/vessl.h"
 
-class KnotOscillator : public vessl::unitGenerator<CartesianFloat>
+template<typename T = vessl::analog_t>
+class KnotOscillator : public vessl::unitGenerator<vessl::vector3<T>>
                      , protected vessl::plist<9>
 {
 public:
@@ -18,6 +18,8 @@ public:
   
   static constexpr int KNOT_TYPE_COUNT = static_cast<int>(KnotType::COUNT);
   
+  using coord_t   = vessl::vector3<T>;
+  using analog_t  = vessl::analog_t;
   using param     = vessl::parameter;
   using desc      = param::desc;
   using digital_p = vessl::digital_p;
@@ -46,9 +48,9 @@ private:
     analog_p knotModQ;
   } params;
 
-  float x1[KNOT_TYPE_COUNT], x2[KNOT_TYPE_COUNT], x3[KNOT_TYPE_COUNT];
-  float y1[KNOT_TYPE_COUNT], y2[KNOT_TYPE_COUNT], y3[KNOT_TYPE_COUNT];
-  float z1[KNOT_TYPE_COUNT], z2[KNOT_TYPE_COUNT];
+  T x1[KNOT_TYPE_COUNT], x2[KNOT_TYPE_COUNT], x3[KNOT_TYPE_COUNT];
+  T y1[KNOT_TYPE_COUNT], y2[KNOT_TYPE_COUNT], y3[KNOT_TYPE_COUNT];
+  T z1[KNOT_TYPE_COUNT], z2[KNOT_TYPE_COUNT];
   
   phase_t phaseP;
   phase_t phaseQ;
@@ -115,32 +117,32 @@ public:
 
   [[nodiscard]] const vessl::parameters& getParameters() const override { return *this; }
   
-  CartesianFloat generate() override
+  coord_t generate() override
   {
     return generate<true>();
   }
 
   template<bool smooth_pq = true>
-  CartesianFloat generate()
+  coord_t generate()
   {
     // calculate coefficients based on knot type and morph settings
     int i = static_cast<int>(params.knotTypeA.value);
     int j = static_cast<int>(params.knotTypeB.value);
     
     // @todo get value as phase_t
-    float lerp = vessl::math::constrain(params.knotMorph.value, 0.f, 1.f);
+    analog_t lerp = vessl::math::constrain(params.knotMorph.value, 0.f, 1.f);
 
     // @todo use phase_t for lerp
-    float cx1 = interp(x1, i, j, lerp);
-    float cx3 = interp(x3, i, j, lerp);
-    float cy1 = interp(y1, i, j, lerp);
-    float cy2 = interp(y2, i, j, lerp);
-    float cz1 = interp(z1, i, j, lerp);
-    float cz2 = interp(z2, i, j, lerp);
+    T cx1 = interp(x1, i, j, lerp);
+    T cx3 = interp(x3, i, j, lerp);
+    T cy1 = interp(y1, i, j, lerp);
+    T cy2 = interp(y2, i, j, lerp);
+    T cz1 = interp(z1, i, j, lerp);
+    T cz2 = interp(z2, i, j, lerp);
 
     phase_t fm = params.phaseMod.value;
-    float kp = vessl::math::floor(params.knotP.value);
-    float kq = vessl::math::floor(params.knotQ.value);
+    analog_t kp = vessl::math::floor(params.knotP.value);
+    analog_t kq = vessl::math::floor(params.knotQ.value);
 
     // the four phases we need for sampling the curves
     // are calculated as multiples of phases running
@@ -149,13 +151,13 @@ public:
     phase_t phaseP1 = phaseP * static_cast<phase_t>(kp) + fm;
     phase_t phaseQ1 = phaseQ * static_cast<phase_t>(kq) + fm;
 
-    x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sinz<float>(phaseQ1);
-    y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cosz<float>(phaseQ1);
+    x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sinz<T>(phaseQ1);
+    y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cosz<T>(phaseQ1);
 
-    float cx2 = interp(x2, i, j, lerp);
-    float cy3 = interp(y3, i, j, lerp);
+    T cx2 = interp(x2, i, j, lerp);
+    T cy3 = interp(y3, i, j, lerp);
 
-    CartesianFloat a = sample(phaseP1, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+    coord_t a = sample(phaseP1, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
     // support fractional P and Q values by generating a curve
     // that is a bilinear interpolation of phase-sync'd curves
@@ -167,7 +169,7 @@ public:
       phase_t phaseP2 = phaseP * (static_cast<phase_t>(kp) + 1) + fm;
       phase_t phaseQ2 = phaseQ * (static_cast<phase_t>(kq) + 1) + fm;
 
-      CartesianFloat b = sample(phaseP2, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+      coord_t b = sample(phaseP2, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
       x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sinz<float>(phaseQ2);
       y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cosz<float>(phaseQ2);
@@ -175,17 +177,17 @@ public:
       cx2 = interp(x2, i, j, lerp);
       cy3 = interp(y3, i, j, lerp);
 
-      CartesianFloat c = sample(phaseP1, phaseQ2, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
-      CartesianFloat d = sample(phaseP2, phaseQ2, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+      coord_t c = sample(phaseP1, phaseQ2, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+      coord_t d = sample(phaseP2, phaseQ2, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
       a = a + (b - a) * pd;
       b = c + (d - c) * pd;
       a = a + (b - a) * qd;
     }
 
-    float freqZ = params.frequency.value / sampRate;
-    float freqP = freqZ*(1+params.knotModP.value);
-    float freqQ = freqZ*(1+params.knotModQ.value);
+    analog_t freqZ = params.frequency.value / sampRate;
+    analog_t freqP = freqZ*(1+params.knotModP.value);
+    analog_t freqQ = freqZ*(1+params.knotModQ.value);
     phaseP += vessl::cast<phase_t>(freqP);
     phaseQ += vessl::cast<phase_t>(freqQ);
     phaseZ += vessl::cast<phase_t>(freqZ);
@@ -201,19 +203,20 @@ protected:
   }
 
 private:
-  static CartesianFloat sample(const phase_t pt, const phase_t qt, const phase_t zt,
-    const float cx1, const float cx2, const float cx3,
-    const float cy1, const float cy2, const float cy3,
-    const float cz1, const float cz2)
+  static coord_t sample(const phase_t pt, const phase_t qt, const phase_t zt,
+    const T cx1, const T cx2, const T cx3,
+    const T cy1, const T cy2, const T cy3,
+    const T cz1, const T cz2)
   {
-    return CartesianFloat(
-      cx1 * vessl::math::sinz<float>(qt) + cx2 * vessl::math::cosz<float>(pt + vessl::cast<phase_t>(cx3)),
-      cy1 * vessl::math::cosz<float>(qt + vessl::cast<phase_t>(cy2)) + cy3 * vessl::math::cosz<float>(pt),
-      cz1 * vessl::math::sinz<float>(3 * zt) + cz2 * vessl::math::sinz<float>(pt)
+    return coord_t(
+      cx1 * vessl::math::sinz<T>(qt) + cx2 * vessl::math::cosz<T>(pt + vessl::cast<phase_t>(cx3)),
+      cy1 * vessl::math::cosz<T>(qt + vessl::cast<phase_t>(cy2)) + cy3 * vessl::math::cosz<T>(pt),
+      cz1 * vessl::math::sinz<T>(3 * zt) + cz2 * vessl::math::sinz<T>(pt)
     );
   }
 
-  static float interp(const float* buffer, int i, int j, float lerp)
+  template<typename B>
+  static B interp(const B* buffer, int i, int j, analog_t lerp)
   {
     return buffer[i] + lerp * (buffer[j] - buffer[i]);
   }

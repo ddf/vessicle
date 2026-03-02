@@ -142,7 +142,7 @@ public:
     knoscil.phaseMod()  = fm;
 
     coord_t coord = knoscil.generate();
-    rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
+    rotator.template setEuler<float>(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     coord = rotator.process(coord);
 
     float st = phaseS + fm*vessl::math::twoPi<float>();

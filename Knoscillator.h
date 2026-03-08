@@ -12,14 +12,17 @@ public:
   using SampleType = vessl::frame::channels<T, 2>;
   
 private:
-  using SineOscillator = vessl::oscil<vessl::waves::sine<>>;
+  using SineOscillator = vessl::oscil<vessl::waves::sine<T>>;
   using KnotOscil = KnotOscillator<T>;
+  // @todo smooth phase_t
   using SmoothFloat = vessl::smoother<>;
   using Transform = vessl::transform33<T>;
   using size_t = vessl::size_t;
   using param = vessl::parameter;
   using analog_p = vessl::analog_p;
   using coord_t = typename KnotOscil::coord_t;
+  using phase_t = vessl::phase_t;
+  using phase_p = vessl::phase_p;
   
   static constexpr size_t noiseDim = 128;
   static constexpr float  noiseStep = 4.0f / noiseDim;
@@ -33,13 +36,14 @@ private:
   SineOscillator kpm;
   KnotOscil      knoscil;
   Transform      rotator;
+  // @todo store as phase_t
   SmoothFloat    zoom;
-
-  float stepRate;
-  float phaseS;
-  float rotateX;
-  float rotateY;
-  float rotateZ;
+  
+  float   sampleRate;
+  phase_t phaseS;
+  phase_t rotateX;
+  phase_t rotateY;
+  phase_t rotateZ;
   
   struct
   {
@@ -50,9 +54,10 @@ private:
     analog_p rotRatioX;
     analog_p rotRatioY;
     analog_p rotRatioZ;
-    analog_p rotModX;
-    analog_p rotModY;
-    analog_p rotModZ;
+    phase_p rotModX;
+    phase_p rotModY;
+    phase_p rotModZ;
+    // @todo zoom => phase_t
     analog_p zoom;
     analog_p squiggleAmt;
     analog_p noiseAmt;
@@ -66,10 +71,11 @@ private:
   NoiseTable noiseTable;
 
 public:
-  explicit Knoscillator(float sampleRate)
+  explicit Knoscillator(float sr)
     : kpm(sampleRate, 1.02f), knoscil(sampleRate)
     , zoom(0.9f, zoomNear)
-    , stepRate(TWO_PI / sampleRate), phaseS(0), rotateX(0), rotateY(0), rotateZ(0)
+    , sampleRate(sr), phaseS(vessl::PHASE_ZERO)
+    , rotateX(vessl::PHASE_ZERO), rotateY(vessl::PHASE_ZERO), rotateZ(vessl::PHASE_ZERO)
   {
     knoscil.knotP() = 2;
     knoscil.knotQ() = 1;
@@ -102,9 +108,9 @@ public:
   param rotRatioX() const { return params.rotRatioX({"rotation ratio X", 'X', analog_p::type}); }
   param rotRatioY() const { return params.rotRatioY({"rotation ratio Y", 'Y', analog_p::type}); }
   param rotRatioZ() const { return params.rotRatioZ({"rotation ratio Z", 'Z', analog_p::type}); }
-  param rotModX() const   { return params.rotModX({"rotation mod X", 'x', analog_p::type }); }
-  param rotModY() const   { return params.rotModY({"rotation mod Y", 'y', analog_p::type }); }
-  param rotModZ() const   { return params.rotModZ({"rotation mod Z", 'z', analog_p::type}); }
+  param rotModX() const   { return params.rotModX({"rotation mod X", 'x', phase_p::type }); }
+  param rotModY() const   { return params.rotModY({"rotation mod Y", 'y', phase_p::type }); }
+  param rotModZ() const   { return params.rotModZ({"rotation mod Z", 'z', phase_p::type}); }
   param cameraZoom() const{ return params.zoom({"camera zoom", 'C', analog_p::type}); }
   param squiggle() const  { return params.squiggleAmt({"squiggle amount", 'S', analog_p::type}); }
   param noise() const     { return params.noiseAmt({"noise amount", 'N', analog_p::type}); }
@@ -122,12 +128,12 @@ public:
 
     float sVol = params.squiggleAmt.value * 0.25f;
 
-    float rxm = params.rotModX.value*TWO_PI;
-    float rxf = params.rotRatioX.value;
-    float rym = params.rotModY.value*TWO_PI;
-    float ryf = params.rotRatioY.value;
-    float rzm = params.rotModZ.value*TWO_PI;
-    float rzf = params.rotRatioZ.value;
+    phase_t rxm = params.rotModX.value;
+    float   rxf = params.rotRatioX.value;
+    phase_t rym = params.rotModY.value;
+    float   ryf = params.rotRatioY.value;
+    phase_t rzm = params.rotModZ.value;
+    float   rzf = params.rotRatioZ.value;
 
     float nVol = params.noiseAmt.value * 0.5f;
     
@@ -136,7 +142,7 @@ public:
     float fmRatio = params.fmRatio.value;
     float fmIndex = params.fmIndex.value;
     kpm.fHz() = freq * fmRatio;
-    float fm = kpm.generate()*fmIndex;
+    phase_t fm = vessl::cast<phase_t>(kpm.generate()*fmIndex);
     
     knoscil.frequency() = freq;
     knoscil.phaseMod()  = fm;
@@ -145,27 +151,27 @@ public:
     rotator.template setEuler<float>(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     coord = rotator.process(coord);
 
-    float st = phaseS + fm*vessl::math::twoPi<float>();
+    phase_t st = phaseS + fm;
     float nz = nVol * noise(coord.x, coord.y);
-    coord.x += vessl::math::cosr(st)*sVol + coord.x * nz;
-    coord.y += vessl::math::sinr(st)*sVol + coord.y * nz;
+    coord.x += vessl::math::cosz<float>(st)*sVol + coord.x * nz;
+    coord.y += vessl::math::sinz<float>(st)*sVol + coord.y * nz;
     coord.z += coord.z * nz;
 
     float projection = 1.0f / (coord.z + zoom.value);
     out.left()  = coord.x * projection;
     out.right() = coord.y * projection;
-
-    const float step = freq * stepRate;
+    
     float knotP = knoscil.knotP().readAnalog();
     float knotQ = knoscil.knotQ().readAnalog();
-    stepPhase(phaseS, step * 4 * (knotP + knotQ));
-    stepPhase(rotateX, stepRate * rotateBaseFreq * rxf);
-    stepPhase(rotateY, stepRate * rotateBaseFreq * ryf);
-    stepPhase(rotateZ, stepRate * rotateBaseFreq * rzf);
-  
-    params.rotationX.value = vessl::math::sinr(rotateX + rxm);
-    params.rotationY.value = vessl::math::cosr(rotateY + rym);
-    params.rotationZ.value = vessl::math::sinr(rotateZ + rzm);
+    float step  = freq / sampleRate;
+    phaseS  = phaseS + static_cast<phase_t>(step*4*(knotP + knotP));
+    rotateX = rotateX + static_cast<phase_t>(step*rotateBaseFreq*rxf);
+    rotateY = rotateY + static_cast<phase_t>(step*rotateBaseFreq*ryf);
+    rotateZ = rotateZ + static_cast<phase_t>(step*rotateBaseFreq*rzf);
+    
+    params.rotationX.value = vessl::math::sinz<float>(rotateX + rxm);
+    params.rotationY.value = vessl::math::cosz<float>(rotateY + rym);
+    params.rotationZ.value = vessl::math::sinz<float>(rotateZ + rzm);
   
     return out;
   }
@@ -199,16 +205,5 @@ private:
     size_t ny = static_cast<size_t>(vessl::math::abs(y) / noiseStep) % noiseDim;
     size_t ni = nx * noiseDim + ny;
     return noiseTable.get(ni);
-  }
-
-  static bool stepPhase(float& phase, const float step)
-  {
-    phase += step;
-    if (phase > TWO_PI)
-    {
-      phase -= TWO_PI;
-      return true;
-    }
-    return false;
   }
 };

@@ -19,13 +19,13 @@ public:
   static constexpr int KNOT_TYPE_COUNT = static_cast<int>(KnotType::COUNT);
   
   using coord_t   = vessl::vector3<T>;
+  using phase_t   = vessl::phase_t;
   using analog_t  = vessl::analog_t;
   using param     = vessl::parameter;
   using desc      = param::desc;
   using digital_p = vessl::digital_p;
   using analog_p  = vessl::analog_p;
   using knot_p    = vessl::param<KnotType>;
-  using phase_t   = vessl::phase_t;
   using phase_p   = vessl::phase_p;
   
 private:

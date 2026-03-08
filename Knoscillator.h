@@ -27,7 +27,7 @@ private:
   static constexpr size_t noiseDim = 128;
   static constexpr float  noiseStep = 4.0f / noiseDim;
   static constexpr float  TWO_PI = vessl::math::twoPi<float>();
-  static constexpr float  rotateBaseFreq = 1.0f / 16.0f;
+  static constexpr phase_t rotateFreqDiv = 1 << 8;
   static constexpr float  zoomFar = 60.0f;
   static constexpr float  zoomNear = 6.0f;
   
@@ -39,7 +39,7 @@ private:
   // @todo store as phase_t
   SmoothFloat    zoom;
   
-  float   sampleRate;
+  phase_t pInc;
   phase_t phaseS;
   phase_t rotateX;
   phase_t rotateY;
@@ -72,9 +72,9 @@ private:
 
 public:
   explicit Knoscillator(float sr)
-    : kpm(sampleRate, 1.02f), knoscil(sampleRate)
+    : kpm(sr, 1.02f), knoscil(sr)
     , zoom(0.9f, zoomNear)
-    , sampleRate(sr), phaseS(vessl::PHASE_ZERO)
+    , pInc(vessl::cast<phase_t>(1.0f / sr)), phaseS(vessl::PHASE_ZERO)
     , rotateX(vessl::PHASE_ZERO), rotateY(vessl::PHASE_ZERO), rotateZ(vessl::PHASE_ZERO)
   {
     knoscil.knotP() = 2;
@@ -92,6 +92,8 @@ public:
       }
     }
   }
+  
+  const KnotOscil& knot() const { return knoscil; }
   
   param knotTypeA() const { return knoscil.knotTypeA(); }
   param knotTypeB() const { return knoscil.knotTypeB(); }
@@ -148,9 +150,9 @@ public:
     knoscil.phaseMod()  = fm;
 
     coord_t coord = knoscil.generate();
-    rotator.template setEuler<float>(rotateX + rxm, rotateY + rym, rotateZ + rzm);
+    rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     coord = rotator.process(coord);
-
+    
     phase_t st = phaseS + fm;
     float nz = nVol * noise(coord.x, coord.y);
     coord.x += vessl::math::cosz<float>(st)*sVol + coord.x * nz;
@@ -163,11 +165,13 @@ public:
     
     float knotP = knoscil.knotP().readAnalog();
     float knotQ = knoscil.knotQ().readAnalog();
-    float step  = freq / sampleRate;
-    phaseS  = phaseS + static_cast<phase_t>(step*4*(knotP + knotP));
-    rotateX = rotateX + static_cast<phase_t>(step*rotateBaseFreq*rxf);
-    rotateY = rotateY + static_cast<phase_t>(step*rotateBaseFreq*ryf);
-    rotateZ = rotateZ + static_cast<phase_t>(step*rotateBaseFreq*rzf);
+    phase_t fInc  = freq * pInc;
+    phase_t sInc  = static_cast<phase_t>(fInc * 4 * (knotP + knotQ));
+    phase_t rInc  = fInc / rotateFreqDiv;
+    phaseS  = phaseS + static_cast<phase_t>(sInc);
+    rotateX = rotateX + static_cast<phase_t>(rInc*rxf);
+    rotateY = rotateY + static_cast<phase_t>(rInc*ryf);
+    rotateZ = rotateZ + static_cast<phase_t>(rInc*rzf);
     
     params.rotationX.value = vessl::math::sinz<float>(rotateX + rxm);
     params.rotationY.value = vessl::math::cosz<float>(rotateY + rym);

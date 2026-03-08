@@ -57,13 +57,14 @@ private:
   phase_t phaseP;
   phase_t phaseQ;
   phase_t phaseZ;
-  float   sampRate;
+  phase_t dt;
+  float   sr_;
 
 public:
   explicit KnotOscillator(float sampleRate)
     : params()
     , phaseP(vessl::PHASE_ZERO), phaseQ(vessl::PHASE_ZERO), phaseZ(vessl::PHASE_ZERO)
-    , sampRate(sampleRate)
+    , dt(vessl::cast<phase_t>(1.0f / sampleRate)), sr_(sampleRate)
   {
     params.knotP.value = 1;
     params.knotQ.value = 1;
@@ -205,15 +206,22 @@ public:
       a = a + (b - a) * qd;
     }
 
-    analog_t freqZ = params.frequency.value / sampRate;
+    analog_t freqZ = params.frequency.value * dt;
     analog_t freqP = freqZ*(1+params.knotModP.value);
     analog_t freqQ = freqZ*(1+params.knotModQ.value);
-    phaseP += vessl::cast<phase_t>(freqP);
-    phaseQ += vessl::cast<phase_t>(freqQ);
-    phaseZ += vessl::cast<phase_t>(freqZ);
+    phaseP += static_cast<phase_t>(freqP);
+    phaseQ += static_cast<phase_t>(freqQ);
+    phaseZ += static_cast<phase_t>(freqZ);
 
     return a;
   }
+  
+  // to help with debugging
+  phase_t pz() const { return phaseZ; }
+  phase_t pp() const { return phaseP; }
+  phase_t pq() const { return phaseQ; }
+  phase_t pi() const { return dt; }
+  float   sr() const { return sr_; }
   
 protected:
   [[nodiscard]] param elementAt(vessl::size_t index) const override

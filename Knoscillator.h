@@ -14,10 +14,11 @@ public:
 private:
   using SineOscillator = vessl::oscil<vessl::waves::sine<T>>;
   using KnotOscil = KnotOscillator<T>;
-  using Smoother = vessl::smoother<T>;
+  using Smoother = vessl::smoother<>;
   using Transform = vessl::transform33<T>;
   using size_t = vessl::size_t;
   using param = vessl::parameter;
+  using analog_t = vessl::analog_t;
   using analog_p = vessl::analog_p;
   using coord_t = typename KnotOscil::coord_t;
   using phase_t = vessl::phase_t;
@@ -26,8 +27,8 @@ private:
   static constexpr size_t noiseDim = 128;
   static constexpr float  noiseStep = 4.0f / noiseDim;
   static constexpr phase_t rotateFreqDiv = 1 << 8;
-  static constexpr T zoomFar = 60.0f * KnotOscil::KNOT_SCALE;
-  static constexpr T zoomNear = 6.0f * KnotOscil::KNOT_SCALE;
+  static constexpr analog_t zoomFar = 60.0f * KnotOscil::KNOT_SCALE;
+  static constexpr analog_t zoomNear = 6.0f * KnotOscil::KNOT_SCALE;
   
   using NoiseTable = vessl::wavetable<float, noiseDim*noiseDim>;
 
@@ -41,6 +42,7 @@ private:
   phase_t rotateX;
   phase_t rotateY;
   phase_t rotateZ;
+  T projection;
   
   struct
   {
@@ -119,35 +121,39 @@ public:
 
   [[nodiscard]] const parameters& getParameters() const override { return *this; }
 
+  T getProjection() const { return projection; }
+
   SampleType generate() override
   {
     SampleType out;
-    zoom = vessl::easing::lerpp(zoomFar, zoomNear, params.zoom.value);
+    //zoom = vessl::easing::lerpp(zoomFar, zoomNear, params.zoom.value);
     //zoom  = zoomFar + (zoomNear - zoomFar)*params.zoom.value;
 
     // float sVol = params.squiggleAmt.value * 0.25f;
 
-    // phase_t rxm = params.rotModX.value;
+    phase_t rxm = params.rotModX.value;
     // float   rxf = params.rotRatioX.value;
-    // phase_t rym = params.rotModY.value;
+    phase_t rym = params.rotModY.value;
     // float   ryf = params.rotRatioY.value;
-    // phase_t rzm = params.rotModZ.value;
+    phase_t rzm = params.rotModZ.value;
     // float   rzf = params.rotRatioZ.value;
 
     // float nVol = params.noiseAmt.value * 0.5f;
     
     float freq = params.freqInHz.value;
     // phase modulate in sync with the current frequency
-    float fmRatio = params.fmRatio.value;
-    float fmIndex = params.fmIndex.value;
-    kpm.fHz() = freq * fmRatio;
+    //float fmRatio = params.fmRatio.value;
+    //float fmIndex = params.fmIndex.value;
+    //kpm.fHz() = freq * fmRatio;
     phase_t fm = 0; //vessl::cast<phase_t>(kpm.generate()*fmIndex);
     
     knoscil.frequency() = freq;
     knoscil.phaseMod()  = fm;
 
     coord_t coord = knoscil.template generate<false>();
-    // rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
+
+    // @todo just doing this puts citadel over the edge, need to claw back time from elsewhere somehow.
+    rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     // coord = rotator.process(coord);
     
     // phase_t st = phaseS + fm;
@@ -156,10 +162,11 @@ public:
     // coord.y += vessl::math::sinz<float>(st)*sVol + coord.y * nz;
     // coord.z += coord.z * nz;
 
-    T zm = zoom.value;
-    T projection = (coord.z + zm);
-    out.left()  = (coord.x / projection);
-    out.right() = (coord.y / projection);
+    analog_t zm = zoomNear; // zoom.value;
+    analog_t cz = vessl::cast<analog_t>(coord.z);
+    projection = vessl::cast<T>(1.0f / (cz + zm));
+    out.left()  = (coord.x * projection);
+    out.right() = (coord.y * projection);
     
     // float knotP = knoscil.knotP().readAnalog();
     // float knotQ = knoscil.knotQ().readAnalog();

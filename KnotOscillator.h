@@ -27,7 +27,7 @@ public:
   using phase_p   = vessl::phase_p;
   
   static constexpr int KNOT_TYPE_COUNT = static_cast<int>(KnotType::COUNT);
-  static constexpr analog_t KNOT_SCALE = (1.f / 100.f);
+  static constexpr analog_t KNOT_SCALE = (1.f / 4.f);
   
 private:
   struct
@@ -62,6 +62,7 @@ private:
   phase_t phaseZ;
   phase_t dt;
   float   sr_;
+  coord_t a;
 
 public:
   explicit KnotOscillator(float sampleRate)
@@ -179,7 +180,7 @@ public:
     T cx2 = vessl::easing::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
     T cy3 = vessl::easing::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
 
-    coord_t a = sample(phaseP1, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+    a = sample(phaseP1, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
     // support fractional P and Q values by generating a curve
     // that is a bilinear interpolation of phase-sync'd curves
@@ -224,6 +225,7 @@ public:
   phase_t pq() const { return phaseQ; }
   phase_t pi() const { return dt; }
   float   sr() const { return sr_; }
+  coord_t xyz() const { return a; }
   
 protected:
   [[nodiscard]] param elementAt(vessl::size_t index) const override

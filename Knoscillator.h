@@ -50,9 +50,9 @@ private:
     analog_p freqInHz;
     analog_p fmRatio;
     analog_p fmIndex;
-    analog_p rotRatioX;
-    analog_p rotRatioY;
-    analog_p rotRatioZ;
+    phase_p rotRatioX;
+    phase_p rotRatioY;
+    phase_p rotRatioZ;
     phase_p rotModX;
     phase_p rotModY;
     phase_p rotModZ;
@@ -80,6 +80,7 @@ public:
     
     params.fmRatio.value = 2;
     params.zoom.value = vessl::PHASE_MAX;
+    params.rotRatioY.value = vessl::PHASE_MAX/2;
     
     // for (size_t x = 0; x < noiseDim; ++x)
     // {
@@ -153,7 +154,7 @@ public:
     coord_t coord = knoscil.template generate<false>();
 
     // @todo just doing this puts citadel over the edge, need to claw back time from elsewhere somehow.
-    rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
+    //rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     // coord = rotator.process(coord);
     
     // phase_t st = phaseS + fm;
@@ -183,6 +184,65 @@ public:
     // params.rotationZ.value = vessl::math::sinz<float>(rotateZ + rzm);
   
     return out;
+  }
+
+  void generate(vessl::array<SampleType> dest)
+  {
+    // float sVol = params.squiggleAmt.value * 0.25f;
+
+    phase_t rxm = params.rotModX.value;
+    phase_t rxf = params.rotRatioX.value;
+    phase_t rym = params.rotModY.value;
+    phase_t ryf = params.rotRatioY.value;
+    phase_t rzm = params.rotModZ.value;
+    phase_t rzf = params.rotRatioZ.value;
+
+    // float nVol = params.noiseAmt.value * 0.5f;
+    
+    analog_t freq = params.freqInHz.value;
+    // phase modulate in sync with the current frequency
+    //float fmRatio = params.fmRatio.value;
+    //float fmIndex = params.fmIndex.value;
+    //kpm.fHz() = freq * fmRatio;
+    phase_t fm = 0; //vessl::cast<phase_t>(kpm.generate()*fmIndex);
+    
+    knoscil.frequency() = freq;
+    knoscil.phaseMod()  = fm;
+    rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
+
+    SampleType out;
+    auto writer = dest.getWriter();
+    while(writer.available())
+    {
+      coord_t coord = knoscil.template generate<false>();
+      coord = rotator.process(coord);
+      
+      // phase_t st = phaseS + fm;
+      // float nz = nVol * noise(coord.x, coord.y);
+      // coord.x += vessl::math::cosz<float>(st)*sVol + coord.x * nz;
+      // coord.y += vessl::math::sinz<float>(st)*sVol + coord.y * nz;
+      // coord.z += coord.z * nz;
+
+      analog_t zm = zoomNear; // zoom.value;
+      analog_t cz = vessl::cast<analog_t>(coord.z);
+      projection = vessl::cast<T>(1.0f / (cz + zm));
+      out.left()  = (coord.x * projection);
+      out.right() = (coord.y * projection);
+
+      writer << out;
+    }
+
+    // float knotP = knoscil.knotP().readAnalog();
+    // float knotQ = knoscil.knotQ().readAnalog();
+    phase_t fInc  = freq * pInc;
+    
+    // phase_t sInc  = static_cast<phase_t>(fInc * 4 * (knotP + knotQ));
+    // phaseS  = phaseS + static_cast<phase_t>(sInc);
+    
+    phase_t rInc  = fInc / rotateFreqDiv * dest.getSize();
+    rotateX = rotateX + static_cast<phase_t>((rInc*rxf)>>12);
+    rotateY = rotateY + static_cast<phase_t>((rInc));
+    rotateZ = rotateZ + static_cast<phase_t>((rInc*rzf)>>12);
   }
   
   static Knoscillator* create(float sampleRate)

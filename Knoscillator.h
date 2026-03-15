@@ -75,12 +75,12 @@ public:
     , pInc(vessl::cast<phase_t>(1.0f / sr)), phaseS(vessl::PHASE_ZERO)
     , rotateX(vessl::PHASE_ZERO), rotateY(vessl::PHASE_ZERO), rotateZ(vessl::PHASE_ZERO)
   {
-    knoscil.knotP() = 2;
-    knoscil.knotQ() = 1;
+    knoscil.knotP() = 2.f;
+    knoscil.knotQ() = 1.f;
     
     params.fmRatio.value = 2;
-    params.zoom.value = vessl::PHASE_MAX;
-    params.rotRatioY.value = vessl::PHASE_MAX/2;
+    params.zoom.value = vessl::PHASE_360;
+    params.rotRatioY.value = vessl::PHASE_180;
     
     // for (size_t x = 0; x < noiseDim; ++x)
     // {
@@ -239,10 +239,10 @@ public:
     // phase_t sInc  = static_cast<phase_t>(fInc * 4 * (knotP + knotQ));
     // phaseS  = phaseS + static_cast<phase_t>(sInc);
     
-    phase_t rInc  = fInc / rotateFreqDiv * dest.getSize();
-    rotateX = rotateX + static_cast<phase_t>((rInc*rxf)>>12);
-    rotateY = rotateY + static_cast<phase_t>((rInc));
-    rotateZ = rotateZ + static_cast<phase_t>((rInc*rzf)>>12);
+    phase_t rInc  = (fInc / rotateFreqDiv).scaled(dest.getSize());
+    rotateX = rotateX + rInc*rxf;
+    rotateY = rotateY + rInc;
+    rotateZ = rotateZ + rInc*rzf;
   }
   
   static Knoscillator* create(float sampleRate)

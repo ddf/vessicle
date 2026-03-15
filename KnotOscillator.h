@@ -118,9 +118,9 @@ private:
     T cz1, T cz2)
   {
     return coord_t(
-      cx1 * vessl::math::sinz<T>(qt) + cx2 * vessl::math::cosz<T>(pt + cx3),
-      cy1 * vessl::math::cosz<T>(qt + cy2) + cy3 * vessl::math::cosz<T>(pt),
-      cz1 * vessl::math::sinz<T>(zt.scaled(3)) + cz2 * vessl::math::sinz<T>(pt)
+      cx1 * vessl::math::sin<T>(qt) + cx2 * vessl::math::cos<T>(pt + cx3),
+      cy1 * vessl::math::cos<T>(qt + cy2) + cy3 * vessl::math::cos<T>(pt),
+      cz1 * vessl::math::sin<T>(zt.scaled(3)) + cz2 * vessl::math::sin<T>(pt)
     );
   }
   
@@ -174,8 +174,8 @@ public:
     phase_t phaseQ1 = phaseQ.scaled(kq) + fm;
     phase_t phaseT1 = phaseQ1;
     
-    x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sinz<T>(phaseT1);
-    y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cosz<T>(phaseT1);
+    x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<T>(phaseT1);
+    y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<T>(phaseT1);
 
     T cx2 = vessl::easing::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
     T cy3 = vessl::easing::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
@@ -195,8 +195,8 @@ public:
 
       coord_t b = sample(phaseP2, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
-      x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sinz<T>(phaseT2);
-      y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cosz<T>(phaseT2);
+      x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<T>(phaseT2);
+      y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<T>(phaseT2);
 
       cx2 = vessl::easing::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
       cy3 = vessl::easing::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);

@@ -26,7 +26,6 @@ private:
   
   static constexpr size_t noiseDim = 128;
   static constexpr float  noiseStep = 4.0f / noiseDim;
-  static constexpr phase_t rotateFreqDiv = 1 << 8;
   static constexpr analog_t zoomFar = 60.0f * KnotOscil::KNOT_SCALE;
   static constexpr analog_t zoomNear = 6.0f * KnotOscil::KNOT_SCALE;
   
@@ -37,7 +36,7 @@ private:
   Transform      rotator;
   Smoother       zoom;
   
-  phase_t pInc;
+  analog_t dt;
   phase_t phaseS;
   phase_t rotateX;
   phase_t rotateY;
@@ -72,7 +71,7 @@ public:
   explicit Knoscillator(float sr)
     : kpm(sr, 1.02f), knoscil(sr)
     , zoom(0.9f, zoomNear)
-    , pInc(vessl::cast<phase_t>(1.0f / sr)), phaseS(vessl::PHASE_ZERO)
+    , dt(1.0f / sr), phaseS(vessl::PHASE_ZERO)
     , rotateX(vessl::PHASE_ZERO), rotateY(vessl::PHASE_ZERO), rotateZ(vessl::PHASE_ZERO)
   {
     knoscil.knotP() = 2.f;
@@ -146,7 +145,7 @@ public:
     //float fmRatio = params.fmRatio.value;
     //float fmIndex = params.fmIndex.value;
     //kpm.fHz() = freq * fmRatio;
-    phase_t fm = 0; //vessl::cast<phase_t>(kpm.generate()*fmIndex);
+    phase_t fm = vessl::PHASE_ZERO; //vessl::cast<phase_t>(kpm.generate()*fmIndex);
     
     knoscil.frequency() = freq;
     knoscil.phaseMod()  = fm;
@@ -204,7 +203,7 @@ public:
     //float fmRatio = params.fmRatio.value;
     //float fmIndex = params.fmIndex.value;
     //kpm.fHz() = freq * fmRatio;
-    phase_t fm = 0; //vessl::cast<phase_t>(kpm.generate()*fmIndex);
+    phase_t fm = vessl::PHASE_ZERO; //vessl::cast<phase_t>(kpm.generate()*fmIndex);
     
     knoscil.frequency() = freq;
     knoscil.phaseMod()  = fm;
@@ -234,12 +233,12 @@ public:
 
     // float knotP = knoscil.knotP().readAnalog();
     // float knotQ = knoscil.knotQ().readAnalog();
-    phase_t fInc  = freq * pInc;
+    phase_t fInc = vessl::cast<phase_t>(freq * dt);
     
     // phase_t sInc  = static_cast<phase_t>(fInc * 4 * (knotP + knotQ));
     // phaseS  = phaseS + static_cast<phase_t>(sInc);
     
-    phase_t rInc  = (fInc / rotateFreqDiv).scaled(dest.getSize());
+    phase_t rInc  = phase_t::sat(fInc.v_ / 8 * dest.getSize());
     rotateX = rotateX + rInc*rxf;
     rotateY = rotateY + rInc;
     rotateZ = rotateZ + rInc*rzf;

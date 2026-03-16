@@ -36,12 +36,12 @@ private:
   Transform      rotator;
   Smoother       zoom;
   
-  analog_t dt;
+  vessl::q31 dt;
   phase_t phaseS;
   phase_t rotateX;
   phase_t rotateY;
   phase_t rotateZ;
-  T projection;
+  phase_t projection;
   
   struct
   {
@@ -71,7 +71,7 @@ public:
   explicit Knoscillator(float sr)
     : kpm(sr, 1.02f), knoscil(sr)
     , zoom(0.9f, zoomNear)
-    , dt(1.0f / sr), phaseS(vessl::PHASE_ZERO)
+    , dt(vessl::q31::recip(sr)), phaseS(vessl::PHASE_ZERO)
     , rotateX(vessl::PHASE_ZERO), rotateY(vessl::PHASE_ZERO), rotateZ(vessl::PHASE_ZERO)
   {
     knoscil.knotP() = 2.f;
@@ -121,7 +121,7 @@ public:
 
   [[nodiscard]] const parameters& getParameters() const override { return *this; }
 
-  T getProjection() const { return projection; }
+  vessl::q31 getProjection() const { return projection; }
 
   SampleType generate() override
   {
@@ -164,7 +164,7 @@ public:
 
     analog_t zm = zoomNear; // zoom.value;
     analog_t cz = vessl::cast<analog_t>(coord.z);
-    projection = vessl::cast<T>(1.0f / (cz + zm));
+    projection = phase_t::recip(cz + zm);
     out.left()  = (coord.x * projection);
     out.right() = (coord.y * projection);
     
@@ -214,7 +214,7 @@ public:
     while(writer.available())
     {
       coord_t coord = knoscil.template generate<false>();
-      coord = rotator.process(coord);
+      //coord = rotator.process(coord);
       
       // phase_t st = phaseS + fm;
       // float nz = nVol * noise(coord.x, coord.y);
@@ -224,24 +224,24 @@ public:
 
       analog_t zm = zoomNear; // zoom.value;
       analog_t cz = vessl::cast<analog_t>(coord.z);
-      projection = vessl::cast<T>(1.0f / (cz + zm));
-      out.left()  = (coord.x * projection);
-      out.right() = (coord.y * projection);
+      projection = vessl::q31::recip(cz + zm);
+      out.left()  = coord.x; // * projection);
+      out.right() = coord.y; // * projection);
 
       writer << out;
     }
 
     // float knotP = knoscil.knotP().readAnalog();
     // float knotQ = knoscil.knotQ().readAnalog();
-    phase_t fInc = vessl::cast<phase_t>(freq * dt);
+    phase_t fInc = phase_t(freq * dt);
     
     // phase_t sInc  = static_cast<phase_t>(fInc * 4 * (knotP + knotQ));
     // phaseS  = phaseS + static_cast<phase_t>(sInc);
     
-    phase_t rInc  = phase_t::sat(fInc.v_ / 8 * dest.getSize());
-    rotateX = rotateX + rInc*rxf;
-    rotateY = rotateY + rInc;
-    rotateZ = rotateZ + rInc*rzf;
+    phase_t rInc  = phase_t::sat((int64_t)fInc.v_ / 4LL * dest.getSize());
+    rotateX.spill(rInc*rxf);
+    rotateY.spill(rInc*ryf);
+    rotateZ.spill(rInc*rzf);
   }
   
   static Knoscillator* create(float sampleRate)

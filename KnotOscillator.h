@@ -50,9 +50,9 @@ private:
   // for this same reason, all T coefficients are in the range [-1,1]
   T x1[KNOT_TYPE_COUNT];
   T x2[KNOT_TYPE_COUNT];
-  uint64_t x3[KNOT_TYPE_COUNT];
+  int64_t x3[KNOT_TYPE_COUNT];
   T y1[KNOT_TYPE_COUNT];
-  uint64_t y2[KNOT_TYPE_COUNT];
+  int64_t y2[KNOT_TYPE_COUNT];
   T y3[KNOT_TYPE_COUNT];
   T z1[KNOT_TYPE_COUNT];
   T z2[KNOT_TYPE_COUNT];
@@ -68,7 +68,7 @@ public:
   explicit KnotOscillator(float sampleRate)
     : params()
     , phaseP(vessl::PHASE_ZERO), phaseQ(vessl::PHASE_ZERO), phaseZ(vessl::PHASE_ZERO)
-    , dt(vessl::cast<phase_t>(1.0f / sampleRate)), sr_(sampleRate)
+    , dt(phase_t::recip(sampleRate)), sr_(sampleRate)
   {
     params.knotP.value = 1;
     params.knotQ.value = 1;
@@ -79,7 +79,7 @@ public:
     static constexpr int TFOIL = static_cast<int>(KnotType::TFOIL);
     x1[TFOIL] = 1.f * KNOT_SCALE;
     x2[TFOIL] = 2.f * KNOT_SCALE;
-    x3[TFOIL] = 3*vessl::PHASE_180.v_/2; // 3*PI/2;
+    x3[TFOIL] = 3*(int64_t)vessl::PHASE_90.v_; // 3*PI/2;
     y1[TFOIL] = 1.f * KNOT_SCALE;
     y2[TFOIL] = 0.f;
     y3[TFOIL] = -2.f * KNOT_SCALE;
@@ -89,9 +89,9 @@ public:
     static constexpr int LISSA = static_cast<int>(KnotType::LISSA);
     x1[LISSA] = 0.f;
     x2[LISSA] = 2.f * KNOT_SCALE;
-    x3[LISSA] = vessl::PHASE_360.v_; // TWO_PI;
+    x3[LISSA] = (int64_t)vessl::PHASE_360.v_; // TWO_PI;
     y1[LISSA] = 2.f * KNOT_SCALE;
-    y2[LISSA] = 3*vessl::PHASE_180.v_; // 3*PI;
+    y2[LISSA] = 3*(int64_t)vessl::PHASE_180.v_; // 3*PI;
     y3[LISSA] = 0.f;
     z1[LISSA] = 0.f;
     z2[LISSA] = 1.f * KNOT_SCALE;
@@ -118,9 +118,9 @@ private:
     T cz1, T cz2)
   {
     return coord_t(
-      cx1 * vessl::math::sin<T>(qt) + cx2 * vessl::math::cos<T>(pt + cx3),
-      cy1 * vessl::math::cos<T>(qt + cy2) + cy3 * vessl::math::cos<T>(pt),
-      cz1 * vessl::math::sin<T>(zt.scaled(3)) + cz2 * vessl::math::sin<T>(pt)
+      cx1 * vessl::math::sin<T>(qt) + cx2 * vessl::math::cos<T>(phase_t::spill(pt, cx3)),
+      cy1 * vessl::math::cos<T>(phase_t::spill(qt, cy2)) + cy3 * vessl::math::cos<T>(pt),
+      cz1 * vessl::math::sin<T>(phase_t::spill(phase_t::spill(zt, zt), zt)) + cz2 * vessl::math::sin<T>(pt)
     );
   }
   
@@ -170,8 +170,9 @@ public:
     // are calculated as multiples of phases running
     // at the same frequency as phaseZ (with phase modulation added).
     // this keeps the four curves properly aligned for blending.
-    phase_t phaseP1 = phaseP.scaled(kp) + fm;
-    phase_t phaseQ1 = phaseQ.scaled(kq) + fm;
+    phase_t phaseP1 = phase_t::spill(phaseP.scaled(kp), fm);
+    phase_t phaseQ1 = phase_t::spill(phaseQ.scaled(kq), fm);
+    phase_t phaseZM = phase_t::spill(phaseZ, fm);
     phase_t phaseT1 = phaseQ1;
     
     x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<T>(phaseT1);
@@ -180,7 +181,7 @@ public:
     T cx2 = vessl::easing::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
     T cy3 = vessl::easing::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
 
-    a = sample(phaseP1, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+    a = sample(phaseP1, phaseQ1, phaseZM , cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
     // support fractional P and Q values by generating a curve
     // that is a bilinear interpolation of phase-sync'd curves
@@ -189,11 +190,11 @@ public:
     {
       T pd = vessl::cast<T>(params.knotP.value - kp);
       T qd = vessl::cast<T>(params.knotQ.value - kq);
-      phase_t phaseP2 = phaseP.scaled(kp + 1) + fm;
-      phase_t phaseQ2 = phaseQ.scaled(kq + 1) + fm;
+      phase_t phaseP2 = phase_t::spill(phaseP.scaled(kp + 1), fm);
+      phase_t phaseQ2 = phase_t::spill(phaseQ.scaled(kq + 1), fm);
       phase_t phaseT2 = phaseQ2;
 
-      coord_t b = sample(phaseP2, phaseQ1, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+      coord_t b = sample(phaseP2, phaseQ1, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
       x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<T>(phaseT2);
       y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<T>(phaseT2);
@@ -201,20 +202,20 @@ public:
       cx2 = vessl::easing::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
       cy3 = vessl::easing::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
 
-      coord_t c = sample(phaseP1, phaseQ2, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
-      coord_t d = sample(phaseP2, phaseQ2, phaseZ + fm, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+      coord_t c = sample(phaseP1, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+      coord_t d = sample(phaseP2, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
       a = a + (b - a) * pd;
       b = c + (d - c) * pd;
       a = a + (b - a) * qd;
     }
 
-    analog_t freqZ = params.frequency.value * vessl::cast<analog_t>(dt);
+    analog_t freqZ = params.frequency.value * dt;
     analog_t freqP = freqZ*(1+params.knotModP.value);
     analog_t freqQ = freqZ*(1+params.knotModQ.value);
-    phaseP += static_cast<phase_t>(freqP);
-    phaseQ += static_cast<phase_t>(freqQ);
-    phaseZ += static_cast<phase_t>(freqZ);
+    phaseP.spill(static_cast<phase_t>(freqP));
+    phaseQ.spill(static_cast<phase_t>(freqQ));
+    phaseZ.spill(static_cast<phase_t>(freqZ));
 
     return a;
   }

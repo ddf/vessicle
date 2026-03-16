@@ -118,9 +118,9 @@ private:
     T cz1, T cz2)
   {
     return coord_t(
-      cx1 * vessl::math::sin<T>(qt) + cx2 * vessl::math::cos<T>(phase_t::spill(pt, cx3)),
-      cy1 * vessl::math::cos<T>(phase_t::spill(qt, cy2)) + cy3 * vessl::math::cos<T>(pt),
-      cz1 * vessl::math::sin<T>(phase_t::spill(phase_t::spill(zt, zt), zt)) + cz2 * vessl::math::sin<T>(pt)
+      cx1 * vessl::math::sin<T>(qt) + cx2 * vessl::math::cos<T>(pt.mod(cx3)),
+      cy1 * vessl::math::cos<T>(qt.mod(cy2)) + cy3 * vessl::math::cos<T>(pt),
+      cz1 * vessl::math::sin<T>(zt.accum(zt).accum(zt)) + cz2 * vessl::math::sin<T>(pt)
     );
   }
   
@@ -170,9 +170,9 @@ public:
     // are calculated as multiples of phases running
     // at the same frequency as phaseZ (with phase modulation added).
     // this keeps the four curves properly aligned for blending.
-    phase_t phaseP1 = phase_t::spill(phaseP.scaled(kp), fm);
-    phase_t phaseQ1 = phase_t::spill(phaseQ.scaled(kq), fm);
-    phase_t phaseZM = phase_t::spill(phaseZ, fm);
+    phase_t phaseP1 = phaseP.scaled(kp).mod(fm);
+    phase_t phaseQ1 = phaseQ.scaled(kq).mod(fm);
+    phase_t phaseZM = phaseZ.mod(fm);
     phase_t phaseT1 = phaseQ1;
     
     x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<T>(phaseT1);
@@ -190,8 +190,8 @@ public:
     {
       T pd = vessl::cast<T>(params.knotP.value - kp);
       T qd = vessl::cast<T>(params.knotQ.value - kq);
-      phase_t phaseP2 = phase_t::spill(phaseP.scaled(kp + 1), fm);
-      phase_t phaseQ2 = phase_t::spill(phaseQ.scaled(kq + 1), fm);
+      phase_t phaseP2 = phaseP.scaled(kp + 1).mod(fm);
+      phase_t phaseQ2 = phaseQ.scaled(kq + 1).mod(fm);
       phase_t phaseT2 = phaseQ2;
 
       coord_t b = sample(phaseP2, phaseQ1, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
@@ -210,12 +210,12 @@ public:
       a = a + (b - a) * qd;
     }
 
-    analog_t freqZ = params.frequency.value * dt;
-    analog_t freqP = freqZ*(1+params.knotModP.value);
-    analog_t freqQ = freqZ*(1+params.knotModQ.value);
-    phaseP.spill(static_cast<phase_t>(freqP));
-    phaseQ.spill(static_cast<phase_t>(freqQ));
-    phaseZ.spill(static_cast<phase_t>(freqZ));
+    phase_t freqZ = dt.scaled(params.frequency.value);
+    phase_t freqP = freqZ.scaled(1.f+params.knotModP.value);
+    phase_t freqQ = freqZ.scaled(1.f+params.knotModQ.value);
+    phaseP.accum(freqP);
+    phaseQ.accum(freqQ);
+    phaseZ.accum(freqZ);
 
     return a;
   }

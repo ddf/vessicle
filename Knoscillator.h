@@ -239,9 +239,9 @@ public:
     // phaseS  = phaseS + static_cast<phase_t>(sInc);
     
     phase_t rInc  = phase_t::sat((int64_t)fInc.v_ / 4LL * dest.getSize());
-    rotateX.spill(rInc*rxf);
-    rotateY.spill(rInc*ryf);
-    rotateZ.spill(rInc*rzf);
+    rotateX.accum(rInc*rxf);
+    rotateY.accum(rInc*ryf);
+    rotateZ.accum(rInc*rzf);
   }
   
   static Knoscillator* create(float sampleRate)

@@ -28,7 +28,7 @@ public:
   using phase_p   = vessl::phase_p;
   
   static constexpr int KNOT_TYPE_COUNT = static_cast<int>(KnotType::COUNT);
-  static constexpr analog_t KNOT_SCALE = (1.f / 4.f);
+  static constexpr analog_t KNOT_SCALE = (1.f / 12.f);
   
 private:
   struct
@@ -97,6 +97,7 @@ public:
     z1[LISSA] = 0.f;
     z2[LISSA] = 1.f * KNOT_SCALE;
     
+    // @todo TORUS scale is like 2x TFOIL and LISSA, try to fix that.
     // TORUS with c = 2 and a = 1:
     // x = (c + a*cos(p))*sin(q) = c * sin(q) + a * sin(q) * cos(p) => cx1 = 2, cx2 = sin(q), cx3 = 0
     // y = (c + a*cos(p))*cos(q) = c * cos(q) + a * cos(q) * cos(p) => cy1 = 2, cy2 = 0, cy3 = cos(q) 
@@ -156,24 +157,24 @@ public:
     
     phase_t m = params.knotMorph.value;
 
-    T cx1 = x1[i]; // vessl::easing::lerpp(x1[i], x1[j], m);
-    phase_t cx3 = vessl::cast<phase_t>(x3[i]); // vessl::cast<phase_t>(vessl::easing::lerpp(x3[i], x3[j], m));
-    T cy1 = y1[i]; // vessl::easing::lerpp(y1[i], y1[j], m);
-    phase_t cy2 = vessl::cast<phase_t>(y2[i]); // vessl::cast<phase_t>(vessl::easing::lerpp(y2[i], y2[j], m));
-    T cz1 = z1[i]; // vessl::easing::lerpp(z1[i], z1[j], m);
-    T cz2 = z2[i]; // vessl::easing::lerpp(z2[i], z2[j], m);
+    T cx1 = vessl::easing::lerpp(x1[i], x1[j], m);
+    phase_t cx3 = vessl::cast<phase_t>(vessl::easing::lerpp(x3[i], x3[j], m));
+    T cy1 = vessl::easing::lerpp(y1[i], y1[j], m);
+    phase_t cy2 = vessl::cast<phase_t>(vessl::easing::lerpp(y2[i], y2[j], m));
+    T cz1 = vessl::easing::lerpp(z1[i], z1[j], m);
+    T cz2 = vessl::easing::lerpp(z2[i], z2[j], m);
 
     phase_t fm = params.phaseMod.value;
-    int32_t kp = 2; //vessl::math::floor(params.knotP.value);
-    int32_t kq = 1; //vessl::math::floor(params.knotQ.value);
+    int32_t kp = (int32_t)(params.knotP.value);
+    int32_t kq = (int32_t)(params.knotQ.value);
 
     // the four phases we need for sampling the curves
     // are calculated as multiples of phases running
     // at the same frequency as phaseZ (with phase modulation added).
     // this keeps the four curves properly aligned for blending.
-    phase_t phaseP1 = phaseP; //phaseP.scaled(kp).mod(fm);
-    phase_t phaseQ1 = phaseQ; //phaseQ.scaled(kq).mod(fm);
-    phase_t phaseZM = phaseZ; //phaseZ.mod(fm);
+    phase_t phaseP1 = phaseP * kp + fm;
+    phase_t phaseQ1 = phaseQ * kq + fm;
+    phase_t phaseZM = phaseZ + fm;
     phase_t phaseT1 = phaseQ1;
     
     x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<T>(phaseT1);
@@ -212,8 +213,8 @@ public:
     }
 
     phase_t freqZ = dt * params.frequency.value;
-    phase_t freqP = freqZ; // freqZ.scaled(1.f+params.knotModP.value);
-    phase_t freqQ = freqZ; // freqZ.scaled(1.f+params.knotModQ.value);
+    phase_t freqP = freqZ; //(1.f+params.knotModP.value);
+    phase_t freqQ = freqZ; //(1.f+params.knotModQ.value);
     phaseP += freqP;
     phaseQ += freqQ;
     phaseZ += freqZ;

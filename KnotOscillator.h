@@ -78,24 +78,24 @@ public:
     params.frequency.value = 1;
     
     static constexpr int TFOIL = static_cast<int>(KnotType::TFOIL);
-    x1[TFOIL] = 1.f * KNOT_SCALE;
-    x2[TFOIL] = 2.f * KNOT_SCALE;
+    x1[TFOIL] = vessl::cast<T>(1.f * KNOT_SCALE);
+    x2[TFOIL] = vessl::cast<T>(2.f * KNOT_SCALE);
     x3[TFOIL] = 3 * vessl::cast<phasew_t>(vessl::PHASE_90); // 3*PI/2;
-    y1[TFOIL] = 1.f * KNOT_SCALE;
-    y2[TFOIL] = 0.f;
-    y3[TFOIL] = -2.f * KNOT_SCALE;
-    z1[TFOIL] = 1.f * KNOT_SCALE;
-    z2[TFOIL] = 0.f;
+    y1[TFOIL] = vessl::cast<T>(1.f * KNOT_SCALE);
+    y2[TFOIL] = vessl::PHASE_ZERO;
+    y3[TFOIL] = vessl::cast<T>(-2.f * KNOT_SCALE);
+    z1[TFOIL] = vessl::cast<T>(1.f * KNOT_SCALE);
+    z2[TFOIL] = vessl::cast<T>(0.f);
 
     static constexpr int LISSA = static_cast<int>(KnotType::LISSA);
-    x1[LISSA] = 0.f;
-    x2[LISSA] = 2.f * KNOT_SCALE;
+    x1[LISSA] = vessl::cast<T>(0.f);
+    x2[LISSA] = vessl::cast<T>(2.f * KNOT_SCALE);
     x3[LISSA] = vessl::PHASE_360; // TWO_PI;
-    y1[LISSA] = 2.f * KNOT_SCALE;
+    y1[LISSA] = vessl::cast<T>(2.f * KNOT_SCALE);
     y2[LISSA] = 3 * vessl::cast<phasew_t>(vessl::PHASE_180); // 3*PI;
-    y3[LISSA] = 0.f;
-    z1[LISSA] = 0.f;
-    z2[LISSA] = 1.f * KNOT_SCALE;
+    y3[LISSA] = vessl::cast<T>(0.f);
+    z1[LISSA] = vessl::cast<T>(0.f);
+    z2[LISSA] = vessl::cast<T>(1.f * KNOT_SCALE);
     
     // @todo TORUS scale is like 2x TFOIL and LISSA, try to fix that.
     // TORUS with c = 2 and a = 1:
@@ -103,14 +103,14 @@ public:
     // y = (c + a*cos(p))*cos(q) = c * cos(q) + a * cos(q) * cos(p) => cy1 = 2, cy2 = 0, cy3 = cos(q) 
     // z = a*sin(p) => cz1 = 0, cz2 = 1
     static constexpr int TORUS = static_cast<int>(KnotType::TORUS);
-    x1[TORUS] = 2.f * KNOT_SCALE;
-    x2[TORUS] = 0.f; /*sin(qt)*/
-    x3[TORUS] = 0.f;
-    y1[TORUS] = 2.f * KNOT_SCALE;
-    y2[TORUS] = 0.f;
-    y3[TORUS] = 0.f; /*cos(qt)*/
-    z1[TORUS] = 0.f;
-    z2[TORUS] = 1.f * KNOT_SCALE;
+    x1[TORUS] = vessl::cast<T>(2.f * KNOT_SCALE);
+    x2[TORUS] = vessl::cast<T>(0.f); /*sin(qt)*/
+    x3[TORUS] = vessl::PHASE_ZERO;
+    y1[TORUS] = vessl::cast<T>(2.f * KNOT_SCALE);
+    y2[TORUS] = vessl::PHASE_ZERO;
+    y3[TORUS] = vessl::cast<T>(0.f); /*cos(qt)*/
+    z1[TORUS] = vessl::cast<T>(0.f);
+    z2[TORUS] = vessl::cast<T>(1.f * KNOT_SCALE);
   }
 
 private:

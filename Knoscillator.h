@@ -160,11 +160,11 @@ public:
     rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     coord = rotator.process(coord);
     
-    phase_t st = phaseS + fm;
-    analog_t nz = nVol * noise(coord.x, coord.y);
-    coord.x += vessl::math::cos<analog_t>(st)*sVol + coord.x * nz;
-    coord.y += vessl::math::sin<analog_t>(st)*sVol + coord.y * nz;
-    coord.z += coord.z * nz;
+    // phase_t st = phaseS + fm;
+    // analog_t nz = nVol * noise(coord.x, coord.y);
+    // coord.x += vessl::math::cos<analog_t>(st)*sVol + coord.x * nz;
+    // coord.y += vessl::math::sin<analog_t>(st)*sVol + coord.y * nz;
+    // coord.z += coord.z * nz;
 
     analog_t zm = zoom.value;
     analog_t cz = vessl::cast<analog_t>(coord.z);

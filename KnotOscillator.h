@@ -16,7 +16,8 @@ public:
     COUNT = 3 // note: update interp method if more knots are added
   };
 
-  using coord_t   = vessl::vector3<T>;
+  using sample_t  = T;
+  using coord_t   = vessl::vector3<sample_t>;
   using phase_t   = vessl::phase_t;
   using phasew_t  = vessl::size_t;
   using analog_t  = vessl::analog_t;
@@ -29,6 +30,7 @@ public:
   
   static constexpr int KNOT_TYPE_COUNT = static_cast<int>(KnotType::COUNT);
   static constexpr analog_t KNOT_SCALE = (1.f / 12.f);
+  static constexpr sample_t TORUS_SCALE = vessl::cast<sample_t>(0.25f);
   
 private:
   struct
@@ -49,14 +51,14 @@ private:
   // morphing only from 0 to PI is not sufficient to line up the different knots correctly.
   // all other coefficients use type T so that we can support fixed-point types.
   // for this same reason, all T coefficients are in the range [-1,1]
-  T x1[KNOT_TYPE_COUNT];
-  T x2[KNOT_TYPE_COUNT];
+  sample_t x1[KNOT_TYPE_COUNT];
+  sample_t x2[KNOT_TYPE_COUNT];
   phasew_t x3[KNOT_TYPE_COUNT];
-  T y1[KNOT_TYPE_COUNT];
+  sample_t y1[KNOT_TYPE_COUNT];
   phasew_t y2[KNOT_TYPE_COUNT];
-  T y3[KNOT_TYPE_COUNT];
-  T z1[KNOT_TYPE_COUNT];
-  T z2[KNOT_TYPE_COUNT];
+  sample_t y3[KNOT_TYPE_COUNT];
+  sample_t z1[KNOT_TYPE_COUNT];
+  sample_t z2[KNOT_TYPE_COUNT];
   
   phase_t phaseP;
   phase_t phaseQ;
@@ -78,24 +80,24 @@ public:
     params.frequency.value = 1;
     
     static constexpr int TFOIL = static_cast<int>(KnotType::TFOIL);
-    x1[TFOIL] = vessl::cast<T>(1.f * KNOT_SCALE);
-    x2[TFOIL] = vessl::cast<T>(2.f * KNOT_SCALE);
+    x1[TFOIL] = vessl::cast<sample_t>(1.f * KNOT_SCALE);
+    x2[TFOIL] = vessl::cast<sample_t>(2.f * KNOT_SCALE);
     x3[TFOIL] = 3 * vessl::cast<phasew_t>(vessl::PHASE_90); // 3*PI/2;
-    y1[TFOIL] = vessl::cast<T>(1.f * KNOT_SCALE);
+    y1[TFOIL] = vessl::cast<sample_t>(1.f * KNOT_SCALE);
     y2[TFOIL] = vessl::PHASE_ZERO;
-    y3[TFOIL] = vessl::cast<T>(-2.f * KNOT_SCALE);
-    z1[TFOIL] = vessl::cast<T>(1.f * KNOT_SCALE);
-    z2[TFOIL] = vessl::cast<T>(0.f);
+    y3[TFOIL] = vessl::cast<sample_t>(-2.f * KNOT_SCALE);
+    z1[TFOIL] = vessl::cast<sample_t>(1.f * KNOT_SCALE);
+    z2[TFOIL] = vessl::cast<sample_t>(0.f);
 
     static constexpr int LISSA = static_cast<int>(KnotType::LISSA);
-    x1[LISSA] = vessl::cast<T>(0.f);
-    x2[LISSA] = vessl::cast<T>(2.f * KNOT_SCALE);
+    x1[LISSA] = vessl::cast<sample_t>(0.f);
+    x2[LISSA] = vessl::cast<sample_t>(2.f * KNOT_SCALE);
     x3[LISSA] = vessl::PHASE_360; // TWO_PI;
-    y1[LISSA] = vessl::cast<T>(2.f * KNOT_SCALE);
+    y1[LISSA] = vessl::cast<sample_t>(2.f * KNOT_SCALE);
     y2[LISSA] = 3 * vessl::cast<phasew_t>(vessl::PHASE_180); // 3*PI;
-    y3[LISSA] = vessl::cast<T>(0.f);
-    z1[LISSA] = vessl::cast<T>(0.f);
-    z2[LISSA] = vessl::cast<T>(1.f * KNOT_SCALE);
+    y3[LISSA] = vessl::cast<sample_t>(0.f);
+    z1[LISSA] = vessl::cast<sample_t>(0.f);
+    z2[LISSA] = vessl::cast<sample_t>(1.f * KNOT_SCALE);
     
     // @todo TORUS scale is like 2x TFOIL and LISSA, try to fix that.
     // TORUS with c = 2 and a = 1:
@@ -103,26 +105,26 @@ public:
     // y = (c + a*cos(p))*cos(q) = c * cos(q) + a * cos(q) * cos(p) => cy1 = 2, cy2 = 0, cy3 = cos(q) 
     // z = a*sin(p) => cz1 = 0, cz2 = 1
     static constexpr int TORUS = static_cast<int>(KnotType::TORUS);
-    x1[TORUS] = vessl::cast<T>(2.f * KNOT_SCALE);
-    x2[TORUS] = vessl::cast<T>(0.f); /*sin(qt)*/
+    x1[TORUS] = vessl::cast<sample_t>(2.f * KNOT_SCALE) * TORUS_SCALE;
+    x2[TORUS] = vessl::cast<sample_t>(0.f); /*sin(qt)*/
     x3[TORUS] = vessl::PHASE_ZERO;
-    y1[TORUS] = vessl::cast<T>(2.f * KNOT_SCALE);
+    y1[TORUS] = vessl::cast<sample_t>(2.f * KNOT_SCALE) * TORUS_SCALE;
     y2[TORUS] = vessl::PHASE_ZERO;
-    y3[TORUS] = vessl::cast<T>(0.f); /*cos(qt)*/
-    z1[TORUS] = vessl::cast<T>(0.f);
-    z2[TORUS] = vessl::cast<T>(1.f * KNOT_SCALE);
+    y3[TORUS] = vessl::cast<sample_t>(0.f); /*cos(qt)*/
+    z1[TORUS] = vessl::cast<sample_t>(0.f);
+    z2[TORUS] = vessl::cast<sample_t>(1.f * KNOT_SCALE) * TORUS_SCALE;
   }
 
 private:
   static coord_t sample(phase_t pt, phase_t qt, phase_t zt,
-    T cx1, T cx2, phase_t cx3,
-    T cy1, phase_t cy2, T cy3,
-    T cz1, T cz2)
+                        sample_t cx1, sample_t cx2, phase_t cx3,
+                        sample_t cy1, phase_t cy2, sample_t cy3,
+                        sample_t cz1, sample_t cz2)
   {
     return coord_t(
-      cx1 * vessl::math::sin<T>(qt) + cx2 * vessl::math::cos<T>(pt + cx3),
-      cy1 * vessl::math::cos<T>(qt + cy2) + cy3 * vessl::math::cos<T>(pt),
-      cz1 * vessl::math::sin<T>(zt + zt + zt) + cz2 * vessl::math::sin<T>(pt)
+      cx1 * vessl::math::sin<sample_t>(qt) + cx2 * vessl::math::cos<sample_t>(pt + cx3),
+      cy1 * vessl::math::cos<sample_t>(qt + cy2) + cy3 * vessl::math::cos<sample_t>(pt),
+      cz1 * vessl::math::sin<sample_t>(zt + zt + zt) + cz2 * vessl::math::sin<sample_t>(pt)
     );
   }
   
@@ -157,12 +159,12 @@ public:
     
     phase_t m = params.knotMorph.value;
 
-    T cx1 = vessl::easing::lerpp(x1[i], x1[j], m);
-    phase_t cx3 = vessl::cast<phase_t>(vessl::easing::lerpp(x3[i], x3[j], m));
-    T cy1 = vessl::easing::lerpp(y1[i], y1[j], m);
-    phase_t cy2 = vessl::cast<phase_t>(vessl::easing::lerpp(y2[i], y2[j], m));
-    T cz1 = vessl::easing::lerpp(z1[i], z1[j], m);
-    T cz2 = vessl::easing::lerpp(z2[i], z2[j], m);
+    sample_t cx1 = vessl::easing::lerpp(x1[i], x1[j], m);
+    phase_t  cx3 = vessl::cast<phase_t>(vessl::easing::lerpp(x3[i], x3[j], m));
+    sample_t cy1 = vessl::easing::lerpp(y1[i], y1[j], m);
+    phase_t  cy2 = vessl::cast<phase_t>(vessl::easing::lerpp(y2[i], y2[j], m));
+    sample_t cz1 = vessl::easing::lerpp(z1[i], z1[j], m);
+    sample_t cz2 = vessl::easing::lerpp(z2[i], z2[j], m);
 
     phase_t fm = params.phaseMod.value;
     int32_t kp = (int32_t)(params.knotP.value);
@@ -177,11 +179,11 @@ public:
     phase_t phaseZM = phaseZ + fm;
     phase_t phaseT1 = phaseQ1;
     
-    x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<T>(phaseT1);
-    y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<T>(phaseT1);
+    x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<sample_t>(phaseT1) * TORUS_SCALE;
+    y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<sample_t>(phaseT1) * TORUS_SCALE;
 
-    T cx2 = x2[i]; // vessl::easing::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
-    T cy3 = y3[i]; // vessl::easing::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
+    sample_t cx2 = vessl::easing::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
+    sample_t cy3 = vessl::easing::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
 
     a = sample(phaseP1, phaseQ1, phaseZM , cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
@@ -190,16 +192,16 @@ public:
     // for F(P,Q), F(P+1,Q), F(P,Q+1), F(P+1,Q+1).
     if (smooth_pq)
     {
-      T pd = vessl::cast<T>(params.knotP.value - kp);
-      T qd = vessl::cast<T>(params.knotQ.value - kq);
+      sample_t pd = vessl::cast<T>(params.knotP.value - kp);
+      sample_t qd = vessl::cast<T>(params.knotQ.value - kq);
       phase_t phaseP2 = phaseP * (kp + 1) + fm;
       phase_t phaseQ2 = phaseQ * (kq + 1) + fm;
       phase_t phaseT2 = phaseQ2;
 
       coord_t b = sample(phaseP2, phaseQ1, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
-      x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<T>(phaseT2);
-      y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<T>(phaseT2);
+      x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<sample_t>(phaseT2) * TORUS_SCALE;
+      y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<sample_t>(phaseT2) * TORUS_SCALE;
 
       cx2 = vessl::easing::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
       cy3 = vessl::easing::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);

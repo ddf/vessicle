@@ -97,51 +97,51 @@ private:
   }
   
 public:
-  const KnotOscil& knot() const { return knoscil; }
+  [[nodiscard]] VESSL_INLINE const KnotOscil& knot() const { return knoscil; }
   
-  param knotTypeA() const { return knoscil.knotTypeA(); }
-  param knotTypeB() const { return knoscil.knotTypeB(); }
-  param knotMorph() const { return knoscil.knotMorph(); }
-  param knotP() const { return knoscil.knotP(); }
-  param knotQ() const { return knoscil.knotQ(); }
-  param knotModP() const { return knoscil.knotModP(); }
-  param knotModQ() const { return knoscil.knotModQ(); }
+  [[nodiscard]] VESSL_INLINE param knotTypeA() const { return knoscil.knotTypeA(); }
+  [[nodiscard]] VESSL_INLINE param knotTypeB() const { return knoscil.knotTypeB(); }
+  [[nodiscard]] VESSL_INLINE param knotMorph() const { return knoscil.knotMorph(); }
+  [[nodiscard]] VESSL_INLINE param knotP() const { return knoscil.knotP(); }
+  [[nodiscard]] VESSL_INLINE param knotQ() const { return knoscil.knotQ(); }
+  [[nodiscard]] VESSL_INLINE param knotModP() const { return knoscil.knotModP(); }
+  [[nodiscard]] VESSL_INLINE param knotModQ() const { return knoscil.knotModQ(); }
   
   // in Hz
-  param frequency() const { return params.freqInHz({ "frequency", 'f', analog_p::type }); }
-  param fmRatio() const   { return params.fmRatio({"fm ratio", 'R', analog_p::type }); }
-  param fmIndex() const   { return params.fmIndex({"fm index", 'r', analog_p::type}); }
-  param rotRatioX() const { return params.rotRatioX({"rotation ratio X", 'X', analog_p::type}); }
-  param rotRatioY() const { return params.rotRatioY({"rotation ratio Y", 'Y', analog_p::type}); }
-  param rotRatioZ() const { return params.rotRatioZ({"rotation ratio Z", 'Z', analog_p::type}); }
-  param rotModX() const   { return params.rotModX({"rotation mod X", 'x', phase_p::type }); }
-  param rotModY() const   { return params.rotModY({"rotation mod Y", 'y', phase_p::type }); }
-  param rotModZ() const   { return params.rotModZ({"rotation mod Z", 'z', phase_p::type}); }
-  param cameraZoom() const{ return params.zoom({"camera zoom", 'C', analog_p::type}); }
-  param squiggle() const  { return params.squiggleAmt({"squiggle amount", 'S', analog_p::type}); }
-  param noise() const     { return params.noiseAmt({"noise amount", 'N', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param frequency() const { return params.freqInHz({ "frequency", 'f', analog_p::type }); }
+  [[nodiscard]] VESSL_INLINE param fmRatio() const   { return params.fmRatio({"fm ratio", 'R', analog_p::type }); }
+  [[nodiscard]] VESSL_INLINE param fmIndex() const   { return params.fmIndex({"fm index", 'r', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotRatioX() const { return params.rotRatioX({"rotation ratio X", 'X', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotRatioY() const { return params.rotRatioY({"rotation ratio Y", 'Y', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotRatioZ() const { return params.rotRatioZ({"rotation ratio Z", 'Z', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotModX() const   { return params.rotModX({"rotation mod X", 'x', phase_p::type }); }
+  [[nodiscard]] VESSL_INLINE param rotModY() const   { return params.rotModY({"rotation mod Y", 'y', phase_p::type }); }
+  [[nodiscard]] VESSL_INLINE param rotModZ() const   { return params.rotModZ({"rotation mod Z", 'z', phase_p::type}); }
+  [[nodiscard]] VESSL_INLINE param cameraZoom() const{ return params.zoom({"camera zoom", 'C', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param squiggle() const  { return params.squiggleAmt({"squiggle amount", 'S', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param noise() const     { return params.noiseAmt({"noise amount", 'N', analog_p::type}); }
   
-  param rotationX() const { return params.rotationX({"rotation X", 'i', analog_p::type}); }
-  param rotationY() const { return params.rotationY({"rotation Y", 'j', analog_p::type}); }
-  param rotationZ() const { return params.rotationZ({"rotation Z", 'k', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotationX() const { return params.rotationX({"rotation X", 'i', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotationY() const { return params.rotationY({"rotation Y", 'j', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotationZ() const { return params.rotationZ({"rotation Z", 'k', analog_p::type}); }
 
   [[nodiscard]] const parameters& getParameters() const override { return *this; }
 
-  T getProjection() const { return projection; }
+  [[nodiscard]] VESSL_INLINE T getProjection() const { return projection; }
 
-  SampleType generate() override
+  VESSL_INLINE SampleType generate() override
   {
     SampleType out;
     zoom = vessl::easing::lerpp(zoomFar, zoomNear, params.zoom.value);
     //zoom = zoomFar + (zoomNear - zoomFar)*params.zoom.value;
 
-    analog_t sVol = params.squiggleAmt.value * 0.25f;
+    //analog_t sVol = params.squiggleAmt.value * 0.25f;
 
     phase_t rxm = params.rotModX.value;
     phase_t rym = params.rotModY.value;
     phase_t rzm = params.rotModZ.value;
 
-    analog_t nVol = params.noiseAmt.value * 0.5f;
+    //analog_t nVol = params.noiseAmt.value * 0.5f;
     
     analog_t freq = params.freqInHz.value;
     // phase modulate in sync with the current frequency
@@ -200,7 +200,7 @@ public:
     return out;
   }
 
-  void generate(vessl::array<SampleType> dest)
+  VESSL_INLINE void generate(vessl::array<SampleType> dest)
   {
     // float sVol = params.squiggleAmt.value * 0.25f;
     // float nVol = params.noiseAmt.value * 0.5f;
@@ -272,7 +272,7 @@ public:
   }
   
 protected:
-  param elementAt(vessl::size_t index) const override
+  VESSL_INLINE param elementAt(vessl::size_t index) const override
   {
     param p[plsz] = {
       knotTypeA(), knotTypeB(), knotMorph(), knotP(), knotQ(), knotModP(), knotModQ(),
@@ -284,7 +284,7 @@ protected:
   }
   
 private:
-  [[nodiscard]] float noise(float x, float y) const
+  [[nodiscard]] VESSL_INLINE float noise(float x, float y) const
   {
     size_t nx = static_cast<size_t>(vessl::math::abs(x) / noiseStep) % noiseDim;
     size_t ny = static_cast<size_t>(vessl::math::abs(y) / noiseStep) % noiseDim;

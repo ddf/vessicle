@@ -116,10 +116,13 @@ public:
   }
 
 private:
-  static coord_t sample(phase_t pt, phase_t qt, phase_t zt,
-                        sample_t cx1, sample_t cx2, phase_t cx3,
-                        sample_t cy1, phase_t cy2, sample_t cy3,
-                        sample_t cz1, sample_t cz2)
+  [[nodiscard]] VESSL_INLINE static coord_t sample
+  (
+    phase_t pt, phase_t qt, phase_t zt,
+    sample_t cx1, sample_t cx2, phase_t cx3,
+    sample_t cy1, phase_t cy2, sample_t cy3,
+    sample_t cz1, sample_t cz2
+  )
   {
     return coord_t(
       cx1 * vessl::math::sin<sample_t>(qt) + cx2 * vessl::math::cos<sample_t>(pt + cx3),
@@ -129,29 +132,29 @@ private:
   }
   
 public:
-  param knotTypeA() const { return params.knotTypeA({ "knot type a", 'A', knot_p::type }); }
-  param knotTypeB() const { return params.knotTypeB({ "knot type b", 'B', knot_p::type }); }
+  [[nodiscard]] VESSL_INLINE param knotTypeA() const { return params.knotTypeA({ "knot type a", 'A', knot_p::type }); }
+  [[nodiscard]] VESSL_INLINE param knotTypeB() const { return params.knotTypeB({ "knot type b", 'B', knot_p::type }); }
   // [0,1] sets morph amount from knot type a to knot type b
-  param knotMorph() const { return params.knotMorph({ "knot morph", 'm', phase_p::type }); }
-  param knotP() const { return params.knotP({ "knot P", 'P', analog_p::type }); }
-  param knotQ() const { return params.knotQ({ "knot Q", 'Q', analog_p::type }); }
+  [[nodiscard]] VESSL_INLINE param knotMorph() const { return params.knotMorph({ "knot morph", 'm', phase_p::type }); }
+  [[nodiscard]] VESSL_INLINE param knotP() const { return params.knotP({ "knot P", 'P', analog_p::type }); }
+  [[nodiscard]] VESSL_INLINE param knotQ() const { return params.knotQ({ "knot Q", 'Q', analog_p::type }); }
   // frequency modulation of just the P part of the knot
-  param knotModP() const { return params.knotModP({ "mod P amount", 'p', analog_p::type }); }
+  [[nodiscard]] VESSL_INLINE param knotModP() const { return params.knotModP({ "mod P amount", 'p', analog_p::type }); }
   // frequency modulation of just the Q part of the knot
-  param knotModQ() const { return params.knotModQ({ "mod Q amount", 'q', analog_p::type }); }
+  [[nodiscard]] VESSL_INLINE param knotModQ() const { return params.knotModQ({ "mod Q amount", 'q', analog_p::type }); }
   
-  param frequency() const { return params.frequency({ "frequency", 'F', analog_p::type }); }
-  param phaseMod() const { return params.phaseMod({ "phase mod", 'f', phase_p::type }); }
+  [[nodiscard]] VESSL_INLINE param frequency() const { return params.frequency({ "frequency", 'F', analog_p::type }); }
+  [[nodiscard]] VESSL_INLINE param phaseMod() const { return params.phaseMod({ "phase mod", 'f', phase_p::type }); }
 
-  [[nodiscard]] const vessl::parameters& getParameters() const override { return *this; }
+  [[nodiscard]] VESSL_INLINE const vessl::parameters& getParameters() const override { return *this; }
   
-  coord_t generate() override
+  VESSL_INLINE coord_t generate() override
   {
     return generate<true>();
   }
 
   template<bool smooth_pq = true>
-  coord_t generate()
+  VESSL_INLINE coord_t generate()
   {
     // calculate coefficients based on knot type and morph settings
     int i = static_cast<int>(params.knotTypeA.value);
@@ -219,21 +222,23 @@ public:
     phase_t freqQ = freqZ; //(1.f+params.knotModQ.value);
     phaseP += freqP;
     phaseQ += freqQ;
+        
+        // ideally we'd expand pot r
     phaseZ += freqZ;
 
     return a;
   }
   
   // to help with debugging
-  phase_t pz() const { return phaseZ; }
-  phase_t pp() const { return phaseP; }
-  phase_t pq() const { return phaseQ; }
-  phase_t pi() const { return dt; }
-  float   sr() const { return sr_; }
-  coord_t xyz() const { return a; }
+  VESSL_INLINE phase_t pz() const { return phaseZ; }
+  VESSL_INLINE phase_t pp() const { return phaseP; }
+  VESSL_INLINE phase_t pq() const { return phaseQ; }
+  VESSL_INLINE phase_t pi() const { return dt; }
+  VESSL_INLINE float   sr() const { return sr_; }
+  VESSL_INLINE coord_t xyz() const { return a; }
   
 protected:
-  [[nodiscard]] param elementAt(vessl::size_t index) const override
+  [[nodiscard]] VESSL_INLINE param elementAt(vessl::size_t index) const override
   {
     param p[plsz] = { knotTypeA(), knotTypeB(), knotMorph(), knotP(), knotQ(), knotModP(), knotModQ(), frequency(), phaseMod() };
     return p[index];

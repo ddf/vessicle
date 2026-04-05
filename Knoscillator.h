@@ -4,7 +4,7 @@
 #include "Noise.hpp"
 #include "vessl/vessl.h"
 
-template<typename T = vessl::analog_t>
+template<typename T = vessl::analog_t, bool smooth_pq = true>
 class Knoscillator : public vessl::unitGenerator<vessl::frame::channels<T, 2>>
   , protected vessl::plist<22>
 {
@@ -155,7 +155,7 @@ public:
     knoscil.frequency() = freq;
     knoscil.phaseMod()  = fm;
 
-    coord_t coord = knoscil.template generate<false>();
+    coord_t coord = knoscil.template generate<smooth_pq>();
     
     rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     coord = rotator.process(coord);
@@ -227,7 +227,7 @@ public:
       phaseMod += mInc;
 
       knoscil.phaseMod() = fm;
-      coord_t coord = knoscil.template generate<false>();
+      coord_t coord = knoscil.template generate<smooth_pq>();
       coord = rotator.process(coord);
       
       // phase_t st = phaseS + fm;

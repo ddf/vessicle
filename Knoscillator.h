@@ -98,6 +98,9 @@ private:
   }
   
 public:
+  coord_t knotCoord;
+  coord_t knotCoordRotated;
+
   [[nodiscard]] VESSL_INLINE const KnotOscil& knot() const { return knoscil; }
   
   [[nodiscard]] VESSL_INLINE param knotTypeA() const { return knoscil.knotTypeA(); }
@@ -218,6 +221,7 @@ public:
     phase_t rym = params.rotModY.value;
     phase_t rzm = params.rotModZ.value;
     rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
+    //rotator.setEuler(0, vessl::PHASE_90, 0);
     T zm = vessl::cast<T>(zoomNear);
 
     SampleType out;
@@ -228,8 +232,8 @@ public:
       phaseMod += mInc;
 
       knoscil.phaseMod() = fm;
-      coord_t coord = knoscil.template generate<smooth_pq>();
-      coord = rotator.process(coord);
+      knotCoord = knoscil.template generate<smooth_pq>();
+      knotCoordRotated = rotator.process(knotCoord);
       
       // phase_t st = phaseS + fm;
       // float nz = nVol * noise(coord.x, coord.y);
@@ -239,9 +243,9 @@ public:
 
       //analog_t zm = zoomNear; // zoom.value;
       //analog_t cz = vessl::cast<analog_t>(coord.z);
-      projection =  zm + coord.z;
-      out.left()  = coord.x / projection;
-      out.right() = coord.y / projection;
+      projection =  zm + knotCoordRotated.z;
+      out.left()  = knotCoordRotated.x / projection;
+      out.right() = knotCoordRotated.y / projection;
 
       writer << out;
     }

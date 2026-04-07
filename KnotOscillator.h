@@ -30,7 +30,7 @@ public:
   
   static constexpr int KNOT_TYPE_COUNT = static_cast<int>(KnotType::COUNT);
   static constexpr analog_t KNOT_SCALE = (1.f / 12.f);
-  static constexpr sample_t TORUS_SCALE = vessl::cast<sample_t>(0.25f);
+  static constexpr sample_t TORUS_SCALE = vessl::cast<sample_t>(0.2f);
   
 private:
   struct
@@ -112,7 +112,8 @@ public:
     y2[TORUS] = vessl::PHASE_ZERO;
     y3[TORUS] = vessl::cast<sample_t>(0.f); /*cos(qt)*/
     z1[TORUS] = vessl::cast<sample_t>(0.f);
-    z2[TORUS] = vessl::cast<sample_t>(1.f * KNOT_SCALE) * TORUS_SCALE;
+    // technically should be 1.f * KNOT_SCALE but that makes for a very flat torus
+    z2[TORUS] = vessl::cast<sample_t>(6.f * KNOT_SCALE) * TORUS_SCALE;
   }
 
 private:
@@ -127,7 +128,7 @@ private:
     return coord_t(
       cx1 * vessl::math::sin<sample_t>(qt) + cx2 * vessl::math::cos<sample_t>(pt + cx3),
       cy1 * vessl::math::cos<sample_t>(qt + cy2) + cy3 * vessl::math::cos<sample_t>(pt),
-      cz1 * vessl::math::sin<sample_t>(zt + zt + zt) + cz2 * vessl::math::sin<sample_t>(pt)
+      cz1 * vessl::math::sin<sample_t>(3 * zt) + cz2 * vessl::math::sin<sample_t>(pt)
     );
   }
   
@@ -156,6 +157,8 @@ public:
   template<bool smooth_pq = true>
   VESSL_INLINE coord_t generate()
   {
+    // @todo ideally we only recalculate coefficents when we need to!
+    
     // calculate coefficients based on knot type and morph settings
     int i = static_cast<int>(params.knotTypeA.value);
     int j = static_cast<int>(params.knotTypeB.value);
@@ -222,8 +225,6 @@ public:
     phase_t freqQ = freqZ; //(1.f+params.knotModQ.value);
     phaseP += freqP;
     phaseQ += freqQ;
-        
-        // ideally we'd expand pot r
     phaseZ += freqZ;
 
     return a;

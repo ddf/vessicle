@@ -133,6 +133,14 @@ public:
 
   [[nodiscard]] VESSL_INLINE T getProjection() const { return projection; }
 
+  void resetRotation() 
+  { 
+    rotator.setIdentity();
+    rotateX = 0;
+    rotateY = 0;
+    rotateZ = 0; 
+  }
+
   VESSL_INLINE SampleType generate() override
   {
     SampleType out;

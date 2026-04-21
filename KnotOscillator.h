@@ -59,6 +59,19 @@ private:
   sample_t y3[KNOT_TYPE_COUNT];
   sample_t z1[KNOT_TYPE_COUNT];
   sample_t z2[KNOT_TYPE_COUNT];
+
+  // cached coefficient values that don't depend on phase.
+  // updated only when knot types change or morph changes.
+  sample_t cx1;
+  phase_t  cx3;
+  sample_t cy1;
+  phase_t  cy2;
+  sample_t cz1;
+  sample_t cz2;
+
+  KnotType knotA = KnotType::COUNT;
+  KnotType knotB = KnotType::COUNT;
+  phase_t  knotM = 0;
   
   phase_t phaseP;
   phase_t phaseQ;
@@ -157,20 +170,29 @@ public:
   template<bool smooth_pq = true>
   VESSL_INLINE coord_t generate()
   {
-    // @todo ideally we only recalculate coefficents when we need to!
-    
     // calculate coefficients based on knot type and morph settings
-    int i = static_cast<int>(params.knotTypeA.value);
-    int j = static_cast<int>(params.knotTypeB.value);
-    
-    phase_t m = params.knotMorph.value;
+    if (knotA != params.knotTypeA.value 
+     || knotB != params.knotTypeB.value 
+     || knotM != params.knotMorph.value)
+    {
+      int i = static_cast<int>(params.knotTypeA.value);
+      int j = static_cast<int>(params.knotTypeB.value);
+      
+      knotA = params.knotTypeA.value;
+      knotB = params.knotTypeB.value;
+      knotM = params.knotMorph.value;
 
-    sample_t cx1 = vessl::easing::lerpp(x1[i], x1[j], m);
-    phase_t  cx3 = vessl::cast<phase_t>(vessl::easing::lerpp(x3[i], x3[j], m));
-    sample_t cy1 = vessl::easing::lerpp(y1[i], y1[j], m);
-    phase_t  cy2 = vessl::cast<phase_t>(vessl::easing::lerpp(y2[i], y2[j], m));
-    sample_t cz1 = vessl::easing::lerpp(z1[i], z1[j], m);
-    sample_t cz2 = vessl::easing::lerpp(z2[i], z2[j], m);
+      cx1 = vessl::easing::lerpp(x1[i], x1[j], knotM);
+      cx3 = vessl::cast<phase_t>(vessl::easing::lerpp(x3[i], x3[j], knotM));
+      cy1 = vessl::easing::lerpp(y1[i], y1[j], knotM);
+      cy2 = vessl::cast<phase_t>(vessl::easing::lerpp(y2[i], y2[j], knotM));
+      cz1 = vessl::easing::lerpp(z1[i], z1[j], knotM);
+      cz2 = vessl::easing::lerpp(z2[i], z2[j], knotM);
+    }
+
+    int i = static_cast<int>(knotA);
+    int j = static_cast<int>(knotB);
+    phase_t m = knotM;
 
     phase_t fm = params.phaseMod.value;
     int32_t kp = (int32_t)(params.knotP.value);

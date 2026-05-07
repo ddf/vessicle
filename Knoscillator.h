@@ -228,7 +228,30 @@ public:
     phase_t rxm = params.rotModX.value;
     phase_t rym = params.rotModY.value;
     phase_t rzm = params.rotModZ.value;
+
+    analog_t rxf = params.rotRatioX.value;
+    analog_t ryf = params.rotRatioY.value;
+    analog_t rzf = params.rotRatioZ.value;
+
+    Transform fromRotator(rotator);
+
+    q31_t rInc   = q31_t(((int64_t)dest.getSize())*dt);
+    rotateX += vessl::cast<phase_t>(rInc.scaled(rxf));
+    rotateY += vessl::cast<phase_t>(rInc.scaled(ryf));
+    rotateZ += vessl::cast<phase_t>(rInc.scaled(rzf));
+
     rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
+
+    sample_t* fromData = fromRotator.getMatrix().getData();
+    sample_t* toData = rotator.getMatrix().getData();
+    sample_t  pct = vessl::cast<T>(1.0f / dest.getSize());
+
+    sample_t rotDeltas[3*3];
+    for(int i = 0; i < 9; ++i)
+    {
+      rotDeltas[i] = (toData[i] - fromData[i]) * pct;
+    }
+
     //rotator.setEuler(0, vessl::PHASE_90, 0);
     T zm = vessl::cast<T>(zoomNear);
 
@@ -241,7 +264,13 @@ public:
 
       knoscil.phaseMod() = fm;
       knotCoord = knoscil.template generate<smooth_pq>();
-      knotCoordRotated = rotator.process(knotCoord);
+      knotCoordRotated = fromRotator.process(knotCoord);
+
+      // lerp matrix values towards our target rotation
+      for(int i = 0; i < 9; ++i)
+      {
+        fromData[i] += rotDeltas[i];
+      }
       
       // phase_t st = phaseS + fm;
       // float nz = nVol * noise(coord.x, coord.y);
@@ -261,17 +290,10 @@ public:
     // float knotP = knoscil.knotP().readAnalog();
     // float knotQ = knoscil.knotQ().readAnalog();
     q31_t fInc = q31_t((int64_t)(dest.getSize() * dt));
-    analog_t rxf = params.rotRatioX.value;
-    analog_t ryf = params.rotRatioY.value;
-    analog_t rzf = params.rotRatioZ.value;
+
     
     // phase_t sInc  = static_cast<phase_t>(fInc * 4 * (knotP + knotQ));
     // phaseS  = phaseS + static_cast<phase_t>(sInc);
-    
-    q31_t rInc = fInc;
-    rotateX += vessl::cast<phase_t>(rInc.scaled(rxf));
-    rotateY += vessl::cast<phase_t>(rInc.scaled(ryf));
-    rotateZ += vessl::cast<phase_t>(rInc.scaled(rzf));
 
     params.rotationX.value = vessl::math::sin<q31_t>(rotateX + rxm);
     params.rotationY.value = vessl::math::cos<q31_t>(rotateY + rym);

@@ -180,7 +180,14 @@ public:
       
       knotA = params.knotTypeA.value;
       knotB = params.knotTypeB.value;
-      knotM = params.knotMorph.value;
+
+      // rate-limit morph to prevent fizz when the value jumps.
+      // note: there is a balance that has to be struck here for Bastl Citadel,
+      // if kminc is too small, this can cause buffer underrun with large value swings.
+      static constexpr phase_t kminc = vessl::PHASE_360 / (360*4); 
+      knotM = params.knotMorph.value > knotM 
+        ? (knotM + vessl::math::min(kminc, params.knotMorph.value - knotM))
+        : (knotM - vessl::math::min(kminc, knotM - params.knotMorph.value));
 
       cx1 = vessl::easing::lerpp(x1[i], x1[j], knotM);
       cx3 = vessl::cast<phase_t>(vessl::easing::lerpp(x3[i], x3[j], knotM));

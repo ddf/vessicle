@@ -1,10 +1,11 @@
 #pragma once
 
 #include "KnotOscillator.h"
+#include "Rotator3D.h"
 #include "Noise.hpp"
 #include "vessl/vessl.h"
 
-template<typename T = vessl::analog_t, bool smooth_pq = true>
+template<typename T = vessl::analog_t, vessl::size_t BLOCK_SIZE = 1, bool smooth_pq = true>
 class Knoscillator : public vessl::unitGenerator<vessl::frame::channels<T, 2>>
   , protected vessl::plist<22>
 {
@@ -17,7 +18,7 @@ private:
   using SineWave = vessl::waves::sine<sample_t>;
   using KnotOscil = KnotOscillator<sample_t>;
   using Smoother = vessl::smoother<>;
-  using Transform = vessl::transform33<sample_t>;
+  using Rotator = Rotator3D<sample_t>;
   
   using size_t = vessl::size_t;
   using param = vessl::parameter;
@@ -36,17 +37,15 @@ private:
   
   using NoiseTable = vessl::wavetable<float, noiseDim*noiseDim>;
 
+public:
   KnotOscil      knoscil;
-  Transform      rotator;
+  Rotator        rotator;
   Smoother       zoom;
   SineWave       modWave;
   
   phase_t dt;
   phase_t phaseMod;
   phase_t phaseS;
-  phase_t rotateX;
-  phase_t rotateY;
-  phase_t rotateZ;
   T       projection;
   
   struct
@@ -55,37 +54,29 @@ private:
     analog_p freqInHz;
     analog_p fmRatio;
     analog_p fmIndex;
-    analog_p rotRatioX;
-    analog_p rotRatioY;
-    analog_p rotRatioZ;
-    phase_p rotModX;
-    phase_p rotModY;
-    phase_p rotModZ;
     phase_p zoom;
     analog_p squiggleAmt;
     analog_p noiseAmt;
-    
-    // outputs
-    q31_p rotationX;
-    q31_p rotationY;
-    q31_p rotationZ;
   } params;
+
+  coord_t blockBuffer[BLOCK_SIZE];
   
   NoiseTable noiseTable;
 
   explicit Knoscillator(float sr)
-    : knoscil(sr)
+    : knoscil(sr), rotator(sr)
     , zoom(0.9f, zoomNear)
     , dt(vessl::cast<phase_t>(1.0f/sr)), phaseMod(vessl::PHASE_ZERO), phaseS(vessl::PHASE_ZERO)
-    , rotateX(vessl::PHASE_ZERO), rotateY(vessl::PHASE_ZERO), rotateZ(vessl::PHASE_ZERO)
   {
     knoscil.knotP() = 2.f;
     knoscil.knotQ() = 1.f;
+
+    rotator.frequency() = 16.f;
+    //rotator.ratioY() = (1.f/8.f);
     
     params.fmRatio.value = 2;
     params.fmIndex.value = 0.f;
     params.zoom.value = vessl::PHASE_360;
-    params.rotRatioY.value = vessl::cast<phase_t>(1.0f/8.0f);
     
     // for (size_t x = 0; x < noiseDim; ++x)
     // {
@@ -115,30 +106,27 @@ public:
   [[nodiscard]] VESSL_INLINE param frequency() const { return params.freqInHz({ "frequency", 'f', analog_p::type }); }
   [[nodiscard]] VESSL_INLINE param fmRatio() const   { return params.fmRatio({"fm ratio", 'R', analog_p::type }); }
   [[nodiscard]] VESSL_INLINE param fmIndex() const   { return params.fmIndex({"fm index", 'r', analog_p::type}); }
-  [[nodiscard]] VESSL_INLINE param rotRatioX() const { return params.rotRatioX({"rotation ratio X", 'X', analog_p::type}); }
-  [[nodiscard]] VESSL_INLINE param rotRatioY() const { return params.rotRatioY({"rotation ratio Y", 'Y', analog_p::type}); }
-  [[nodiscard]] VESSL_INLINE param rotRatioZ() const { return params.rotRatioZ({"rotation ratio Z", 'Z', analog_p::type}); }
-  [[nodiscard]] VESSL_INLINE param rotModX() const   { return params.rotModX({"rotation mod X", 'x', phase_p::type }); }
-  [[nodiscard]] VESSL_INLINE param rotModY() const   { return params.rotModY({"rotation mod Y", 'y', phase_p::type }); }
-  [[nodiscard]] VESSL_INLINE param rotModZ() const   { return params.rotModZ({"rotation mod Z", 'z', phase_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotRatioX() const { return rotator.ratioX(); }
+  [[nodiscard]] VESSL_INLINE param rotRatioY() const { return rotator.ratioY(); }
+  [[nodiscard]] VESSL_INLINE param rotRatioZ() const { return rotator.ratioZ(); }
+  [[nodiscard]] VESSL_INLINE param rotModX() const   { return rotator.modX(); }
+  [[nodiscard]] VESSL_INLINE param rotModY() const   { return rotator.modY(); }
+  [[nodiscard]] VESSL_INLINE param rotModZ() const   { return rotator.modZ(); }
   [[nodiscard]] VESSL_INLINE param cameraZoom() const{ return params.zoom({"camera zoom", 'C', analog_p::type}); }
   [[nodiscard]] VESSL_INLINE param squiggle() const  { return params.squiggleAmt({"squiggle amount", 'S', analog_p::type}); }
   [[nodiscard]] VESSL_INLINE param noise() const     { return params.noiseAmt({"noise amount", 'N', analog_p::type}); }
   
-  [[nodiscard]] VESSL_INLINE param rotationX() const { return params.rotationX({"rotation X", 'i', q31_p::type}); }
-  [[nodiscard]] VESSL_INLINE param rotationY() const { return params.rotationY({"rotation Y", 'j', q31_p::type}); }
-  [[nodiscard]] VESSL_INLINE param rotationZ() const { return params.rotationZ({"rotation Z", 'k', q31_p::type}); }
+  [[nodiscard]] VESSL_INLINE param rotationX() const { return rotator.rotationX(); }
+  [[nodiscard]] VESSL_INLINE param rotationY() const { return rotator.rotationY(); }
+  [[nodiscard]] VESSL_INLINE param rotationZ() const { return rotator.rotationZ(); }
 
   [[nodiscard]] const parameters& getParameters() const override { return *this; }
 
   [[nodiscard]] VESSL_INLINE T getProjection() const { return projection; }
 
-  void resetRotation() 
+  VESSL_INLINE void resetRotation()
   { 
-    rotator.setIdentity();
-    rotateX = 0;
-    rotateY = 0;
-    rotateZ = 0; 
+    rotator.reset();
   }
 
   VESSL_INLINE SampleType generate() override
@@ -148,11 +136,6 @@ public:
     //zoom = zoomFar + (zoomNear - zoomFar)*params.zoom.value;
 
     //analog_t sVol = params.squiggleAmt.value * 0.25f;
-
-    phase_t rxm = params.rotModX.value;
-    phase_t rym = params.rotModY.value;
-    phase_t rzm = params.rotModZ.value;
-
     //analog_t nVol = params.noiseAmt.value * 0.5f;
     
     analog_t freq = params.freqInHz.value;
@@ -168,8 +151,6 @@ public:
     knoscil.phaseMod()  = fm;
 
     coord_t coord = knoscil.template generate<smooth_pq>();
-    
-    rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
     coord = rotator.process(coord);
     
     // phase_t st = phaseS + fm;
@@ -192,22 +173,9 @@ public:
     
     // float knotP = knoscil.knotP().readAnalog();
     // float knotQ = knoscil.knotQ().readAnalog();
-
-    q31_t rxf = vessl::cast<q31_t>(params.rotRatioX.value);
-    q31_t ryf = vessl::cast<q31_t>(params.rotRatioY.value);
-    q31_t rzf = vessl::cast<q31_t>(params.rotRatioZ.value);
     
     // phase_t sInc  = static_cast<phase_t>(fInc * 4 * (knotP + knotQ));
     // phaseS  = phaseS + static_cast<phase_t>(sInc);
-    
-    q31_t rInc = fInc;
-    rotateX += vessl::cast<phase_t>(rInc*rxf);
-    rotateY += vessl::cast<phase_t>(rInc*ryf);
-    rotateZ += vessl::cast<phase_t>(rInc*rzf);
-    
-    params.rotationX.value = vessl::math::sin<q31_t>(rotateX + rxm);
-    params.rotationY.value = vessl::math::cos<q31_t>(rotateY + rym);
-    params.rotationZ.value = vessl::math::sin<q31_t>(rotateZ + rzm);
   
     return out;
   }
@@ -225,53 +193,32 @@ public:
     
     knoscil.frequency() = freq;
 
-    phase_t rxm = params.rotModX.value;
-    phase_t rym = params.rotModY.value;
-    phase_t rzm = params.rotModZ.value;
-
-    analog_t rxf = params.rotRatioX.value;
-    analog_t ryf = params.rotRatioY.value;
-    analog_t rzf = params.rotRatioZ.value;
-
-    Transform fromRotator(rotator);
-
-    q31_t rInc   = q31_t(((int64_t)dest.getSize())*dt);
-    rotateX += vessl::cast<phase_t>(rInc.scaled(rxf));
-    rotateY += vessl::cast<phase_t>(rInc.scaled(ryf));
-    rotateZ += vessl::cast<phase_t>(rInc.scaled(rzf));
-
-    rotator.setEuler(rotateX + rxm, rotateY + rym, rotateZ + rzm);
-
-    sample_t* fromData = fromRotator.getMatrix().getData();
-    sample_t* toData = rotator.getMatrix().getData();
-    sample_t  pct = vessl::cast<T>(1.0f / dest.getSize());
-
-    sample_t rotDeltas[3*3];
-    for(int i = 0; i < 9; ++i)
-    {
-      rotDeltas[i] = (toData[i] - fromData[i]) * pct;
-    }
-
     //rotator.setEuler(0, vessl::PHASE_90, 0);
     T zm = vessl::cast<T>(zoomNear);
 
-    SampleType out;
-    auto writer = dest.getWriter();
+    // generate knot, then rotate it.
+    vessl::array<coord_t> block(blockBuffer, BLOCK_SIZE);
+    auto writer = block.getWriter();
     while(writer.available())
     {
       phase_t fm = vessl::cast<phase_t>(modWave.evaluate(phaseMod)*fmIndex);
       phaseMod += mInc;
 
       knoscil.phaseMod() = fm;
-      knotCoord = knoscil.template generate<smooth_pq>();
-      knotCoordRotated = fromRotator.process(knotCoord);
+      writer << knoscil.template generate<smooth_pq>();
+    }
+    
+    rotator.process(block, block);
 
-      // lerp matrix values towards our target rotation
-      for(int i = 0; i < 9; ++i)
-      {
-        fromData[i] += rotDeltas[i];
-      }
-      
+    // project to 2D
+    coord_t coord;
+    SampleType out;
+    auto input = block.getReader();
+    auto output = dest.getWriter();
+    while(output.available())
+    {
+      coord = input.read();
+
       // phase_t st = phaseS + fm;
       // float nz = nVol * noise(coord.x, coord.y);
       // coord.x += vessl::math::cosz<float>(st)*sVol + coord.x * nz;
@@ -280,24 +227,18 @@ public:
 
       //analog_t zm = zoomNear; // zoom.value;
       //analog_t cz = vessl::cast<analog_t>(coord.z);
-      projection =  zm + knotCoordRotated.z;
-      out.left()  = knotCoordRotated.x / projection;
-      out.right() = knotCoordRotated.y / projection;
+      projection =  zm + coord.z;
+      out.left()  = coord.x / projection;
+      out.right() = coord.y / projection;
 
-      writer << out;
+      output << out;
     }
 
     // float knotP = knoscil.knotP().readAnalog();
     // float knotQ = knoscil.knotQ().readAnalog();
-    q31_t fInc = q31_t((int64_t)(dest.getSize() * dt));
-
-    
+    // q31_t fInc = q31_t((int64_t)(dest.getSize() * dt));
     // phase_t sInc  = static_cast<phase_t>(fInc * 4 * (knotP + knotQ));
     // phaseS  = phaseS + static_cast<phase_t>(sInc);
-
-    params.rotationX.value = vessl::math::sin<q31_t>(rotateX + rxm);
-    params.rotationY.value = vessl::math::cos<q31_t>(rotateY + rym);
-    params.rotationZ.value = vessl::math::sin<q31_t>(rotateZ + rzm);
   }
   
   static Knoscillator* create(float sampleRate)

@@ -12,7 +12,7 @@ public:
     using SampleType = vessl::vector3<T>;
     using Transform = vessl::transform33<sample_t>;
 
-//private:
+private:
     using phase_t = vessl::phase_t;
     using phase_p = vessl::phase_p;
     using analog_t = vessl::analog_t;

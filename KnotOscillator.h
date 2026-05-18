@@ -3,7 +3,7 @@
 #include "vessl/vessl.h"
 
 template<typename T = vessl::analog_t>
-class KnotOscillator : public vessl::unitGenerator<vessl::vector3<T>>
+class KnotOscillator : public vessl::unitGenerator<vessl::frame::channels<T,3>>
                      , protected vessl::plist<9>
 {
 public:
@@ -17,7 +17,7 @@ public:
   };
 
   using sample_t  = T;
-  using coord_t   = vessl::vector3<sample_t>;
+  using coord_t   = vessl::frame::channels<T,3>;
   using phase_t   = vessl::phase_t;
   using phasew_t  = vessl::size_t;
   using analog_t  = vessl::analog_t;
@@ -202,8 +202,8 @@ public:
     phase_t m = knotM;
 
     phase_t fm = params.phaseMod.value;
-    int32_t kp = (int32_t)(params.knotP.value);
-    int32_t kq = (int32_t)(params.knotQ.value);
+    int32_t kp = static_cast<int32_t>(params.knotP.value);
+    int32_t kq = static_cast<int32_t>(params.knotQ.value);
 
     // the four phases we need for sampling the curves
     // are calculated as multiples of phases running

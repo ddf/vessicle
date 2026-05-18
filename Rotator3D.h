@@ -3,13 +3,13 @@
 #include "vessl/vessl.h"
 
 template<typename T = vessl::analog_t>
-class Rotator3D : public vessl::unitProcessor<vessl::vector3<T>>
+class Rotator3D : public vessl::unitProcessor<vessl::frame::channels<T,3>>
                 , protected vessl::plist<10>
 {
     using sample_t = T;
 
 public:
-    using SampleType = vessl::vector3<T>;
+    using SampleType = vessl::frame::channels<T,3>;
     using Transform = vessl::transform33<sample_t>;
 
 private:
@@ -102,7 +102,7 @@ private:
       return rotator.process(in);
     }
 
-    VESSL_INLINE void process(vessl::array<SampleType> input, vessl::array<SampleType> output)
+    VESSL_INLINE void process(vessl::array<SampleType> input, vessl::array<SampleType> output) override
     {
       Transform fromRotator(rotator);
 

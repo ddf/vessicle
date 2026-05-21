@@ -6,14 +6,14 @@
 using GaussProcessor = BlurProcessor2D<TextureSizeType::Fractional>;
 using Smoother = vessl::smoother<float>;
 using GaussSampleFrame = vessl::frame::channels<float, 2>;
-using HighPass = vessl::filter<float, vessl::filtering::biquad<1>::highPass>;
+using HighPass = vessl::filter<float, vessl::filtering::biquad<1>::high_pass>;
 
-class Gauss : public vessl::unitProcessor<GaussSampleFrame>, protected vessl::plist<7>
+class Gauss : public vessl::unit_processor<GaussSampleFrame>, protected vessl::plist<7>
 {
   using param = vessl::parameter;
   
 public:
-  const parameters& getParameters() const override { return *this; }
+  const parameters& parameters() const override { return *this; }
   
 private:
   struct
@@ -91,7 +91,7 @@ public:
     {
       BlurKernel::destroy(kernel);
     }
-    delete[] blurKernels.getData();
+    delete[] blurKernels.data();
     GaussProcessor::destroy(processorLeft);
     GaussProcessor::destroy(processorRight);
   }
@@ -130,8 +130,8 @@ public:
     float slcoL = feedbackAmtLeft * 1.4f;
     float slcoR = feedbackAmtRight * 1.4f;
 
-    feedbackFilterLeft.fHz() = cutoffL;
-    feedbackFilterRight.fHz() = cutoffR;
+    feedbackFilterLeft.fhz() = cutoffL;
+    feedbackFilterRight.fhz() = cutoffR;
     float feedLeft = feedbackFilterLeft.process(feedbackFrame.left());
     float feedRight = feedbackFilterRight.process(feedbackFrame.right());
 
@@ -144,8 +144,8 @@ public:
     
     float tsz = vessl::easing::lerp<float>(MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE, params.textureSize.value);
     float tlt = textureTiltSmoother = (vessl::math::constrain<float>(params.textureTilt.value*TILT_SCALE, -TILT_SCALE, TILT_SCALE));
-    float tszL = textureSizeLeft = (vessl::math::constrain<float>(tsz * vessl::gain::decibelsToScale(-tlt), MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE));
-    float tszR = textureSizeRight = (vessl::math::constrain<float>(tsz * vessl::gain::decibelsToScale(tlt), MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE));
+    float tszL = textureSizeLeft = (vessl::math::constrain<float>(tsz * vessl::gain::decibels_to_scale(-tlt), MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE));
+    float tszR = textureSizeRight = (vessl::math::constrain<float>(tsz * vessl::gain::decibels_to_scale(tlt), MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE));
 
     processorLeft->textureSize() = tszL;
     processorRight->textureSize() = tszR;
@@ -156,7 +156,7 @@ public:
     {
       // scale max blur down so we never blur more than a maximum number of samples away
       float bscl = MIN_TEXTURE_SIZE / tszL;
-      float bszL = vessl::math::constrain(blurSizeLeft = (bsz * vessl::gain::decibelsToScale(-blt) * bscl), MIN_BLUR_SIZE, MAX_BLUR_SIZE);
+      float bszL = vessl::math::constrain(blurSizeLeft = (bsz * vessl::gain::decibels_to_scale(-blt) * bscl), MIN_BLUR_SIZE, MAX_BLUR_SIZE);
       float blurIdx = bszL * (KERNEL_COUNT - 2);
       float blurLow;
       float blurFrac = vessl::math::mod(blurIdx, &blurLow);
@@ -166,7 +166,7 @@ public:
     // set right kernel
     {
       float bscl = MIN_TEXTURE_SIZE / tszR;
-      float bszR = vessl::math::constrain(blurSizeRight = (bsz * vessl::gain::decibelsToScale(blt) * bscl), MIN_BLUR_SIZE, MAX_BLUR_SIZE);
+      float bszR = vessl::math::constrain(blurSizeRight = (bsz * vessl::gain::decibels_to_scale(blt) * bscl), MIN_BLUR_SIZE, MAX_BLUR_SIZE);
       float blurIdx = bszR * (KERNEL_COUNT - 2);
       float blurLow;
       float blurFrac = vessl::math::mod(blurIdx, &blurLow);
@@ -181,18 +181,18 @@ public:
     feedbackFrame.left() = procOut.left()*feedSame + procOut.right()*feedCross;
     feedbackFrame.right() = procOut.right()*feedSame + procOut.left()*feedCross;
     
-    float scale  = vessl::gain::decibelsToScale(params.gain.value);
+    float scale  = vessl::gain::decibels_to_scale(params.gain.value);
     procOut.scale(scale);
     
     return procOut;
   }
   
-  using unitProcessor::process;
+  using unit_processor::process;
   
 protected:
   param elementAt(vessl::size_t index) const override
   {
-    param p[plsz] = { textureSize(), textureTilt(), blurSize(), blurTilt(), feedback(), crossFeedback(), gain() };
+    param p[num] = { textureSize(), textureTilt(), blurSize(), blurTilt(), feedback(), crossFeedback(), gain() };
     return p[index];
   }
 };

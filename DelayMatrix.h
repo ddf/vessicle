@@ -29,17 +29,17 @@ DESCRIPTION:
 using Array = vessl::array<float>;
 using Smoother = vessl::smoother<float>;
 using Limiter = vessl::limiter<float>;
-using DcBlockFilter = vessl::filter<float, vessl::filtering::dcblock>;
-using LowPassFilter = vessl::filter<float, vessl::filtering::biquad<1>::lowPass>;
+using DcBlockFilter = vessl::filter<float, vessl::filtering::dc_block>;
+using LowPassFilter = vessl::filter<float, vessl::filtering::biquad<1>::low_pass>;
 using GateOscil = vessl::oscil<vessl::waves::clock<>>;
 using SineOscil = vessl::oscil<vessl::waves::sine<>>;
-using RandomGenerator = vessl::noiseGenerator<float, vessl::noise::white>;
+using RandomGenerator = vessl::noise_generator<float, vessl::noise::white>;
 using DelayLine = DelayWithFreeze<float>;
 
 
 // not a public unit processor because we only process stereo input in-place.
 template<int DELAY_LINE_COUNT>
-class DelayMatrix : vessl::unitProcessor<float>, vessl::clockable, protected vessl::plist<10>
+class DelayMatrix : vessl::unit_processor<float>, vessl::clockable, protected vessl::plist<10>
 {
 public:
   enum FreezeState : uint8_t  // NOLINT(performance-enum-size)
@@ -96,7 +96,7 @@ public:
     GateOscil     gate;
     Smoother      feedback[DELAY_LINE_COUNT];
     
-    Array output() { return { outputLeft.getData(), outputLeft.getSize()*2 }; }
+    Array output() { return { outputLeft.data(), outputLeft.size()*2 }; }
     
     DelayLineData()
     : skew(0), delayLength(0), gateResetCounter(0), timeUpdateCount(0)
@@ -221,7 +221,7 @@ public:
     , clocked(false)
     , clockMultIndex((CLOCK_MULT_COUNT - 1) / 2)
     , spreadDivMultIndex((SPREAD_DIVMULT_COUNT - 1) / 2)
-    , samplesSinceLastTap(clockable::periodMax)
+    , samplesSinceLastTap(clockable::period_max_)
     , timeRaw(MIN_TIME_SECONDS * sampleRate)
     , rndGen(0), modAmount(0)
     , sampleRate(sampleRate)
@@ -239,7 +239,7 @@ public:
 
     float maxTimeSamples = MAX_TIME_SECONDS * sampleRate;
     vessl::size_t delayBufferSize = 0;
-    float* pbuff = processBuffer.getData();
+    float* pbuff = processBuffer.data();
     for (int i = 0; i < DELAY_LINE_COUNT; ++i)
     {
       DelayLineData& data = delayData[i];
@@ -259,8 +259,8 @@ public:
       data.gate.setSampleRate(sampleRate);
       data.gate.waveform.pulseWidth = 0.1f;
       data.gateResetCounter = 0;
-      data.limitLeft.preGain() = vessl::gain::fromScale(1.125f);
-      data.limitRight.preGain() = vessl::gain::fromScale(1.125f);
+      data.limitLeft.preGain() = vessl::gain::from_scale(1.125f);
+      data.limitRight.preGain() = vessl::gain::from_scale(1.125f);
 
       data.inputLeft = Array(pbuff + blockSize * 0, blockSize);
       data.inputRight = Array(pbuff + blockSize * 1, blockSize);
@@ -272,7 +272,7 @@ public:
     }
 
     delayBuffer = Array(new float[delayBufferSize], delayBufferSize);
-    float* dbuff = delayBuffer.getData();
+    float* dbuff = delayBuffer.data();
     for (int i = 0; i < DELAY_LINE_COUNT; ++i)
     {
       vessl::size_t buffSize = delayData[i].delayLength;
@@ -290,9 +290,9 @@ public:
       delete delays[i];
     }
     
-    delete[] delayBuffer.getData();
-    delete[] processBuffer.getData();
-    delete[] outputWet.getData();
+    delete[] delayBuffer.data();
+    delete[] processBuffer.data();
+    delete[] outputWet.data();
   }
   
   param time() const { return params.time({ "time", 't', analog_p::type }); }
@@ -368,9 +368,9 @@ public:
     const float processStart = getElapsedBlockTime();
 #endif
 
-    vessl::size_t blockSize = audioLeft.getSize();
+    vessl::size_t blockSize = audioLeft.size();
     tick(blockSize);
-    clocked = samplesSinceLastTap < clockable::periodMax;
+    clocked = samplesSinceLastTap < clockable::period_max_;
 
     float timeParam = params.time.value;
     float spreadParam = params.spread.value;
@@ -388,7 +388,7 @@ public:
         clockMultIndex = static_cast<uint8_t>(vessl::easing::lerp(static_cast<float>(clockMultIndex), 0.f, (0.47f - timeParam) * 2.12f));
       }
       // equivalent to multiplying the BPM
-      timeRaw = getPeriod() / static_cast<float>(CLOCK_MULT[clockMultIndex]);
+      timeRaw = period() / static_cast<float>(CLOCK_MULT[clockMultIndex]);
 
       spreadDivMultIndex = (SPREAD_DIVMULT_COUNT - 1) / 2;
       if (spreadParam >= 0.53f)
@@ -640,8 +640,8 @@ public:
     audioLeft.scale(dry);
     audioRight.scale(dry);
     
-    audioLeft.add(Array(outputWet.getData(), outSize));
-    audioRight.add(Array(outputWet.getData()+outSize, outSize));
+    audioLeft.add(Array(outputWet.data(), outSize));
+    audioRight.add(Array(outputWet.data()+outSize, outSize));
 
     params.lfoOut.value = lfoGen;
     params.rndOut.value = rndGen;
@@ -659,17 +659,17 @@ public:
   float freezePosition(int i) const { return delays[i]->left.freezePosition().readAnalog(); }
   
   bool isClocked() const { return clocked; }
-  using clockable::getBpm;
+  using clockable::bpm;
   int clockMult() const { return CLOCK_MULT[clockMultIndex]; }
   int spreadMult() const { return SPREAD_DIVMULT[spreadDivMultIndex]; }
   float modValue() const { return modAmount; }
   
-  const parameters& getParameters() const override { return *this; }
+  const parameters& parameters() const override { return *this; }
   
 protected:
   param elementAt(vessl::size_t index) const override
   {
-    param p[plsz] = { time(), spread(), feedback(), dryWet(), skew(), mod(), lfo(), rnd(), gate(), freeze() };
+    param p[num] = { time(), spread(), feedback(), dryWet(), skew(), mod(), lfo(), rnd(), gate(), freeze() };
     return p[index];
   }
   

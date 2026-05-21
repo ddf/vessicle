@@ -29,13 +29,13 @@ public:
 
     float sum = 0;
     float standardDevSq = standardDeviation * standardDeviation;
-    float gaussCoeff = 1.0f / vessl::math::sqrt<float>(vessl::math::twoPi<float>()*standardDevSq);
+    float gaussCoeff = 1.0f / vessl::math::sqrt<float>(vessl::math::two_pi<float>()*standardDevSq);
 
-    for (size_t s = 0; s < size; ++s)
+    for (size_t s = 0; s < size_; ++s)
     {
-      float offset = (static_cast<float>(s) / static_cast<float>(size - 1) - 0.5f)*blurSize;
+      float offset = (static_cast<float>(s) / static_cast<float>(size_ - 1) - 0.5f)*blurSize;
       float gaussWeight = gaussCoeff * vessl::math::pow(vessl::math::e<float>(), -((offset*offset) / (2 * standardDevSq)));
-      data[s] = BlurKernelSample(offset, gaussWeight);
+      data_[s] = BlurKernelSample(offset, gaussWeight);
       sum += gaussWeight;
     }
 
@@ -61,7 +61,7 @@ public:
 
   static void lerp(BlurKernel fromKernel, BlurKernel toKernel, float alpha, BlurKernel outKernel)
   {
-    size_t ksz = fromKernel.getSize();
+    size_t ksz = fromKernel.size();
     for (size_t i = 0; i < ksz; ++i)
     {
       BlurKernelSample& from = fromKernel[i];
@@ -82,6 +82,6 @@ public:
 
   static void destroy(BlurKernel kernel)
   {
-    delete[] kernel.data;
+    delete[] kernel.data_;
   }
 };

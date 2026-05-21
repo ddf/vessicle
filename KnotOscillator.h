@@ -3,7 +3,7 @@
 #include "vessl/vessl.h"
 
 template<typename T = vessl::analog_t>
-class KnotOscillator : public vessl::unitGenerator<vessl::frame::channels<T,3>>
+class KnotOscillator : public vessl::unit_generator<vessl::frame::channels<T,3>>
                      , protected vessl::plist<9>
 {
 public:
@@ -83,7 +83,7 @@ private:
 public:
   explicit KnotOscillator(float sampleRate)
     : params()
-    , phaseP(vessl::PHASE_ZERO), phaseQ(vessl::PHASE_ZERO), phaseZ(vessl::PHASE_ZERO)
+    , phaseP(vessl::phase_zero), phaseQ(vessl::phase_zero), phaseZ(vessl::phase_zero)
     , dt(vessl::cast<phase_t>(1.0f/sampleRate)), sr_(sampleRate)
   {
     params.knotP.value = 1;
@@ -95,9 +95,9 @@ public:
     static constexpr int TFOIL = static_cast<int>(KnotType::TFOIL);
     x1[TFOIL] = vessl::cast<sample_t>(1.f * KNOT_SCALE);
     x2[TFOIL] = vessl::cast<sample_t>(2.f * KNOT_SCALE);
-    x3[TFOIL] = 3 * vessl::cast<phasew_t>(vessl::PHASE_90); // 3*PI/2;
+    x3[TFOIL] = 3 * vessl::cast<phasew_t>(vessl::phase_90); // 3*PI/2;
     y1[TFOIL] = vessl::cast<sample_t>(1.f * KNOT_SCALE);
-    y2[TFOIL] = vessl::PHASE_ZERO;
+    y2[TFOIL] = vessl::phase_zero;
     y3[TFOIL] = vessl::cast<sample_t>(-2.f * KNOT_SCALE);
     z1[TFOIL] = vessl::cast<sample_t>(1.f * KNOT_SCALE);
     z2[TFOIL] = vessl::cast<sample_t>(0.f);
@@ -105,9 +105,9 @@ public:
     static constexpr int LISSA = static_cast<int>(KnotType::LISSA);
     x1[LISSA] = vessl::cast<sample_t>(0.f);
     x2[LISSA] = vessl::cast<sample_t>(2.f * KNOT_SCALE);
-    x3[LISSA] = vessl::PHASE_360; // TWO_PI;
+    x3[LISSA] = vessl::phase_360; // TWO_PI;
     y1[LISSA] = vessl::cast<sample_t>(2.f * KNOT_SCALE);
-    y2[LISSA] = 3 * vessl::cast<phasew_t>(vessl::PHASE_180); // 3*PI;
+    y2[LISSA] = 3 * vessl::cast<phasew_t>(vessl::phase_180); // 3*PI;
     y3[LISSA] = vessl::cast<sample_t>(0.f);
     z1[LISSA] = vessl::cast<sample_t>(0.f);
     z2[LISSA] = vessl::cast<sample_t>(1.f * KNOT_SCALE);
@@ -120,9 +120,9 @@ public:
     static constexpr int TORUS = static_cast<int>(KnotType::TORUS);
     x1[TORUS] = vessl::cast<sample_t>(2.f * KNOT_SCALE) * TORUS_SCALE;
     x2[TORUS] = vessl::cast<sample_t>(0.f); /*sin(qt)*/
-    x3[TORUS] = vessl::PHASE_ZERO;
+    x3[TORUS] = vessl::phase_zero;
     y1[TORUS] = vessl::cast<sample_t>(2.f * KNOT_SCALE) * TORUS_SCALE;
-    y2[TORUS] = vessl::PHASE_ZERO;
+    y2[TORUS] = vessl::phase_zero;
     y3[TORUS] = vessl::cast<sample_t>(0.f); /*cos(qt)*/
     z1[TORUS] = vessl::cast<sample_t>(0.f);
     // technically should be 1.f * KNOT_SCALE but that makes for a very flat torus
@@ -160,7 +160,7 @@ public:
   [[nodiscard]] VESSL_INLINE param frequency() const { return params.frequency({ "frequency", 'F', analog_p::type }); }
   [[nodiscard]] VESSL_INLINE param phaseMod() const { return params.phaseMod({ "phase mod", 'f', phase_p::type }); }
 
-  [[nodiscard]] VESSL_INLINE const vessl::parameters& getParameters() const override { return *this; }
+  [[nodiscard]] VESSL_INLINE const parameter_list& parameters() const override { return *this; }
   
   VESSL_INLINE coord_t generate() override
   {
@@ -184,7 +184,7 @@ public:
       // rate-limit morph to prevent fizz when the value jumps.
       // note: there is a balance that has to be struck here for Bastl Citadel,
       // if kminc is too small, this can cause buffer underrun with large value swings.
-      static constexpr phase_t kminc = vessl::PHASE_360 / (360*4); 
+      static constexpr phase_t kminc = vessl::phase_360 / (360*4); 
       knotM = params.knotMorph.value > knotM 
         ? (knotM + vessl::math::min(kminc, params.knotMorph.value - knotM))
         : (knotM - vessl::math::min(kminc, knotM - params.knotMorph.value));
@@ -268,9 +268,9 @@ public:
   VESSL_INLINE coord_t xyz() const { return a; }
   
 protected:
-  [[nodiscard]] VESSL_INLINE param elementAt(vessl::size_t index) const override
+  [[nodiscard]] VESSL_INLINE param element_at(vessl::size_t index) const override
   {
-    param p[plsz] = { knotTypeA(), knotTypeB(), knotMorph(), knotP(), knotQ(), knotModP(), knotModQ(), frequency(), phaseMod() };
+    param p[num] = { knotTypeA(), knotTypeB(), knotMorph(), knotP(), knotQ(), knotModP(), knotModQ(), frequency(), phaseMod() };
     return p[index];
   }
 

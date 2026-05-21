@@ -25,7 +25,7 @@ public:
 
   CircularTexture subtexture(size_t w, size_t h)
   {
-    CircularTexture sub = CircularTexture(buffer.getData(), buffer.getSize(), w, h);
+    CircularTexture sub = CircularTexture(buffer.getData(), buffer.size(), w, h);
     // have to do this because the ring constructor initializes write index to 0.
     sub.buffer.setWriteIndex(buffer.getWriteIndex());
     return sub;
@@ -39,8 +39,8 @@ public:
   T read(size_t x, size_t y)
   {
     // add buffer size so we don't have to worry about negative indices
-    size_t index = buffer.getWriteIndex() + buffer.getSize() - 1 - (y*sizeX + x);
-    return buffer.getData()[index%buffer.getSize()];
+    size_t index = buffer.getWriteIndex() + buffer.size() - 1 - (y*sizeX + x);
+    return buffer.getData()[index%buffer.size()];
   }
 
   T readBilinear(float u, float v)

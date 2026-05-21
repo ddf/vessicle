@@ -58,11 +58,11 @@ using EnvelopeFollower = vessl::follow<float>;
 using Array = vessl::array<float>;
 
 template<uint32_t FREEZE_BUFFER_SIZE>
-class Glitch : public vessl::unitProcessor<GlitchSampleType>, public vessl::clockable, protected vessl::plist<6>
+class Glitch : public vessl::unit_processor<GlitchSampleType>, public vessl::clockable, protected vessl::plist<6>
 {
 public:
   using param = vessl::parameter;
-  const parameters& getParameters() const override { return *this; }
+  const parameters& parameters() const override { return *this; }
  
 private:
   struct
@@ -113,10 +113,10 @@ public:
   
   ~Glitch() override
   {
-    delete[] inputEnvelope.getData();
-    delete[] followerWindow.getData();
-    delete[] freezeBuffer.getData();
-    delete[] processBuffer.getData();
+    delete[] inputEnvelope.data();
+    delete[] followerWindow.data();
+    delete[] freezeBuffer.data();
+    delete[] processBuffer.data();
   }
 
   using clockable::clock;
@@ -133,7 +133,7 @@ public:
 
   void process(vessl::array<GlitchSampleType> input, vessl::array<GlitchSampleType> output) override
   {
-    vessl::size_t size = input.getSize();
+    vessl::size_t size = input.size();
     clockable::tick(size);
 
     float smoothFreeze = repeats();
@@ -175,8 +175,8 @@ public:
     crushProc.depth() = bits;
     crushProc.rate() = rate;
 
-    auto inputReader = input.getReader();
-    auto iew = inputEnvelope.getWriter();
+    auto inputReader = input.reader();
+    auto iew = inputEnvelope.writer();
     while(inputReader)
     {
       iew << inputReader.read().toMono().value();
@@ -210,7 +210,7 @@ public:
       if (params.glitchEnabled.value)
       {
         vessl::size_t d = i+1;
-        GlitchSampleType f = freezeProc.getBuffer().read(d);
+        GlitchSampleType f = freezeProc.delay_line().read(d);
         GlitchSampleType& pf = processBuffer[i];
         pf.left() = glitch(pf.left(), f.left());
         pf.right() = glitch(pf.right(), f.right());
@@ -243,7 +243,7 @@ public:
 protected:
   param elementAt(vessl::size_t index) const override
   {
-    param p[plsz] = { repeats(), crush(), glitch(), glitching(), shape(), freeze() };
+    param p[num] = { repeats(), crush(), glitch(), glitching(), shape(), freeze() };
     return p[index];
   }
   void tock(vessl::size_t sampleDelay) override
@@ -291,7 +291,7 @@ private:
 
   float freezeSize(const count_t idx) const
   {
-    return getPeriod() * FREEZE_SETTINGS[idx].clockRatio;
+    return period() * FREEZE_SETTINGS[idx].clockRatio;
   }
 
   static float freezeSpeed(const count_t idx)
@@ -301,7 +301,7 @@ private:
 
   float glitchSize(const count_t idx) const
   {
-    return getPeriod() * GLITCH_SETTINGS[idx].clockRatio;
+    return period() * GLITCH_SETTINGS[idx].clockRatio;
   }
 
   static float glitch(const float a, const float b)
@@ -313,10 +313,10 @@ private:
   static GlitchSampleType interpolatedReadAt(vessl::array<GlitchSampleType> buffer, float index)
   {
     // index can be negative, we ensure it is positive.
-    index += static_cast<float>(buffer.getSize());
+    index += static_cast<float>(buffer.size());
     count_t idx = static_cast<count_t>(index);
-    const GlitchSampleType& low = buffer[idx%buffer.getSize()];
-    const GlitchSampleType& high = buffer[(idx + 1)%buffer.getSize()];
+    const GlitchSampleType& low = buffer[idx%buffer.size()];
+    const GlitchSampleType& high = buffer[(idx + 1)%buffer.size()];
     float frac = index - static_cast<float>(idx);
     return low + frac * (high - low);
   }

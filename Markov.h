@@ -4,7 +4,7 @@
 #include "MarkovGenerator.h"
 
 using vessl::unit;
-using vessl::unitProcessor;
+using vessl::unit_processor;
 using vessl::array;
 using vessl::clockable;
 using Slew = vessl::slew<float>;
@@ -12,7 +12,7 @@ using Smoother = vessl::smoother<float>;
 using Asr = vessl::asr<float>;
 
 template<typename T, typename H>
-class Markov final : public unitProcessor<T>, public clockable, protected vessl::plist<7>
+class Markov final : public unit_processor<T>, public clockable, protected vessl::plist<7>
 {
   using param = vessl::parameter;
   using size_t = vessl::size_t;
@@ -22,7 +22,7 @@ class Markov final : public unitProcessor<T>, public clockable, protected vessl:
   static constexpr float  MIN_DECAY_SECONDS = 0.010f;
   
 public:
-  const parameters& getParameters() const override { return *this; }
+  const parameters& parameters() const override { return *this; }
   
 private:
   struct
@@ -53,7 +53,7 @@ private:
   int minWordSizeSamples;
   
 public:
-  Markov(float sampleRate, size_t bufferSize) : unitProcessor<T>()
+  Markov(float sampleRate, size_t bufferSize) : unit_processor<T>()
   , clockable(sampleRate, 16, CLOCK_PERIOD_MAX, 120)
   , listenEnvelope(sampleRate, 5, 5), decaySmoother(0.9f, MIN_DECAY_SECONDS)
   , expoGenerateEnvelope(ATTACK_SECONDS, MIN_DECAY_SECONDS, sampleRate), linearGenerateEnvelope(ATTACK_SECONDS, MIN_DECAY_SECONDS, sampleRate)
@@ -77,7 +77,7 @@ public:
   param wordStarted() const { return params.wordStarted({ "word started", 's', vessl::binary_p::type }); }
 
   typename MarkovGenerator<T,H>::Chain::Stats getChainStats() const { return generator.chain().getStats(); }
-  int wordSizeMs() const { return static_cast<int>(static_cast<float>(generator.chain().getCurrentWordSize()) / clockable::sr * 1000);}
+  int wordSizeMs() const { return static_cast<int>(static_cast<float>(generator.chain().getCurrentWordSize()) / clockable::sample_rate_ * 1000);}
   int clocksUntilReset() const { return clocksToReset; }
   
   T process(const T& input) override
@@ -87,7 +87,7 @@ public:
 
   void process(array<T> in, array<T> out) override
   {
-    size_t inSize = in.getSize();
+    size_t inSize = in.size();
     tick(inSize);
     
     if (samplesSinceLastTock < CLOCK_PERIOD_MAX)
@@ -106,7 +106,7 @@ public:
       }
     }
 
-    size_t blockSize = out.getSize();
+    size_t blockSize = out.size();
     size_t wordStartedGateDelay = 0;
     if (wordStartedGate > 0)
     {
@@ -163,7 +163,7 @@ public:
 protected:
   param elementAt(vessl::size_t index) const override
   {
-    param p[plsz] = { listen(), wordSize(), variation(), decay(), progress(), envelope(), wordStarted() };
+    param p[num] = { listen(), wordSize(), variation(), decay(), progress(), envelope(), wordStarted() };
     return p[index];
   }
   
@@ -199,7 +199,7 @@ private:
     {
       wordGateLength = minWordSizeSamples;
     }
-    const float wordReleaseSeconds = static_cast<float>(wordSize - wordGateLength) / clockable::sr;
+    const float wordReleaseSeconds = static_cast<float>(wordSize - wordGateLength) / clockable::sample_rate_;
     expoGenerateEnvelope.release().duration() = wordReleaseSeconds;
     linearGenerateEnvelope.release().duration() = wordReleaseSeconds;
   }
@@ -290,7 +290,7 @@ private:
       wordsToNewInterval = 1;
     }
 
-    float periodInSamples = static_cast<float>(tempo.samples);
+    float periodInSamples = static_cast<float>(tempo_.samples);
     int wordSize = vessl::math::max(minWordSizeSamples, static_cast<int>(periodInSamples * wordScale));
     clocksToReset = COUNTERS[divMultIdx][intervalIdx] - 1;
 

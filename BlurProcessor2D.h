@@ -5,7 +5,7 @@
 
 // performs a 2D blur on the input signal
 template<TextureSizeType TextureSizeType = TextureSizeType::Integral>
-class BlurProcessor2D : vessl::unitProcessor<float>, protected vessl::plist<1>
+class BlurProcessor2D : vessl::unit_processor<float>, protected vessl::plist<1>
 {
   using param = vessl::parameter;
   
@@ -24,7 +24,7 @@ public:
     params.textureSize.value = blurX->textureSize().readAnalog();
   }
 
-  const parameters& getParameters() const override { return *this; }
+  const parameters& parameters() const override { return *this; }
 
   param textureSize() const { return params.textureSize({ "Texture Size", 't', vessl::analog_p::type }); }
 
@@ -90,7 +90,7 @@ public:
 protected:
   param elementAt(vessl::size_t index) const override
   {
-    param p[plsz] = { textureSize() };
+    param p[num] = { textureSize() };
     return p[index];
   }
 };

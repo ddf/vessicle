@@ -3,7 +3,7 @@
 #include "vessl/vessl.h"
 
 template<typename T = vessl::analog_t>
-class Rotator3D : public vessl::unitProcessor<vessl::frame::channels<T,3>>
+class Rotator3D : public vessl::unit_processor<vessl::frame::channels<T,3>>
                 , protected vessl::plist<10>
 {
     using sample_t = T;
@@ -44,7 +44,7 @@ private:
   public:
     explicit Rotator3D(analog_t sampleRate)
       : dt(vessl::cast<phase_t>(1.0f/sampleRate))
-      , phaseX(vessl::PHASE_ZERO), phaseY(vessl::PHASE_ZERO), phaseZ(vessl::PHASE_ZERO)
+      , phaseX(vessl::phase_zero), phaseY(vessl::phase_zero), phaseZ(vessl::phase_zero)
     {
 
     }
@@ -66,11 +66,11 @@ private:
     [[nodiscard]] VESSL_INLINE param rotationY() const { return params.rotationY({"rotation Y", 'j', q31_p::type}); }
     [[nodiscard]] VESSL_INLINE param rotationZ() const { return params.rotationZ({"rotation Z", 'k', q31_p::type}); }
 
-    [[nodiscard]] const parameters& getParameters() const override { return *this; }
+    [[nodiscard]] const parameter_list& parameters() const override { return *this; }
 
     VESSL_INLINE void reset() 
     { 
-      rotator.setIdentity();
+      rotator.set_identity();
       phaseX = 0;
       phaseY = 0;
       phaseZ = 0; 
@@ -82,7 +82,7 @@ private:
       phase_t ry = phaseY + params.modY.value;
       phase_t rz = phaseZ + params.modZ.value;
 
-      rotator.setEuler(rx, ry, rz);
+      rotator.set_euler(rx, ry, rz);
       
       analog_t freq = params.freqInHz.value;
       analog_t fInc = freq * dt;
@@ -107,15 +107,15 @@ private:
       Transform fromRotator(rotator);
 
       analog_t freq = params.freqInHz.value;
-      analog_t fInc = dt * freq * input.getSize();
+      analog_t fInc = dt * freq * input.size();
 
       analog_t rxf = params.ratioX.value;
       analog_t ryf = params.ratioY.value;
       analog_t rzf = params.ratioZ.value;
 
-      phase_t xInc = rxf > 0 ? fInc*rxf : (fInc*rxf) + vessl::PHASE_360;
-      phase_t yInc = ryf > 0 ? fInc*ryf : (fInc*ryf) + vessl::PHASE_360;
-      phase_t zInc = rzf > 0 ? fInc*rzf : (fInc*rzf) + vessl::PHASE_360;
+      phase_t xInc = rxf > 0 ? fInc*rxf : (fInc*rxf) + vessl::phase_360;
+      phase_t yInc = ryf > 0 ? fInc*ryf : (fInc*ryf) + vessl::phase_360;
+      phase_t zInc = rzf > 0 ? fInc*rzf : (fInc*rzf) + vessl::phase_360;
 
       phaseX += xInc;
       phaseY += yInc;
@@ -125,11 +125,11 @@ private:
       phase_t ry = phaseY + params.modY.value;
       phase_t rz = phaseZ + params.modZ.value;
 
-      rotator.setEuler(rx, ry, rz);
+      rotator.set_euler(rx, ry, rz);
 
-      sample_t* fromData = fromRotator.getMatrix().getData();
-      sample_t* toData = rotator.getMatrix().getData();
-      sample_t  pct = vessl::cast<sample_t>(1.0f / input.getSize());
+      sample_t* fromData = fromRotator.matrix().data();
+      sample_t* toData = rotator.matrix().data();
+      sample_t  pct = vessl::cast<sample_t>(1.0f / input.size());
 
       sample_t rotDeltas[3*3];
       for(int i = 0; i < 9; ++i)
@@ -137,8 +137,8 @@ private:
         rotDeltas[i] = (toData[i] - fromData[i]) * pct;
       }
 
-      auto reader = input.getReader();
-      auto writer = output.getWriter();
+      auto reader = input.make_reader();
+      auto writer = output.make_writer();
       while(reader.available())
       {
         SampleType in = reader.read();
@@ -158,9 +158,9 @@ private:
     }
 
   protected:
-    [[nodiscard]] param elementAt(vessl::size_t index) const override
+    [[nodiscard]] param element_at(vessl::size_t index) const override
     {
-      param p[plsz] = {
+      param p[num] = {
         frequency(), 
         ratioX(), ratioY(), ratioZ(),
         modX(), modY(), modZ(),

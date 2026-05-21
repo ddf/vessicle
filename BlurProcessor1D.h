@@ -23,7 +23,7 @@ enum class TextureSizeType : uint8_t
 // note: TextureSizeType is used to specialize on float to support textures with non-integral dimensions
 // probably there is a less confusing way to do this.
 template<BlurAxis Axis, TextureSizeType TextureSizeType = TextureSizeType::Integral>
-class BlurProcessor1D : public vessl::unitProcessor<float>, protected vessl::plist<1>
+class BlurProcessor1D : public vessl::unit_processor<float>, protected vessl::plist<1>
 {  
   using param = vessl::parameter;
   static constexpr param::desc d_t = { "Texture Size", 't', vessl::analog_p::type };
@@ -34,11 +34,11 @@ public:
   explicit BlurProcessor1D() = default;
 
   BlurProcessor1D(float sampleRate, float* textureData, size_t textureSizeX, size_t textureSizeY, const BlurKernel& kernel)
-    : unitProcessor(), texture(textureData, textureSizeX * textureSizeY, textureSizeX, textureSizeY)
+    : unit_processor(), texture(textureData, textureSizeX * textureSizeY, textureSizeX, textureSizeY)
     , kernel(kernel) 
   { params.textureSize.value = static_cast<float>(textureSizeX); }
   
-  const parameters& getParameters() const override { return *this; }
+  const parameters& parameters() const override { return *this; }
 
   param textureSize() const { return params.textureSize(d_t); }
   
@@ -54,7 +54,7 @@ public:
     return processFractional();
   }
 
-  using unitProcessor::process;
+  using unit_processor::process;
   
   static BlurProcessor1D* create(float sampleRate, size_t maxTextureSize, const BlurKernel& blurKernel)
   {
@@ -77,7 +77,7 @@ public:
 protected:
   param elementAt(vessl::size_t index) const override
   {
-    param p[plsz] = { textureSize() }; return p[index];
+    param p[num] = { textureSize() }; return p[index];
   }
 
 private:
@@ -92,7 +92,7 @@ private:
   {
     float v = 0;
     float c = kernel.getBlurSize() * 0.5f;
-    size_t samples = kernel.getSize();
+    size_t samples = kernel.size();
     size_t texSize = textureSize().readDigital();
     if (Axis == BlurAxis::X)
     {

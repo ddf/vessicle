@@ -3,19 +3,19 @@
 #include "vessl/vessl.h"
 
 template<typename T>
-class DelayWithFreeze : public vessl::unitProcessor<T>, protected vessl::plist<5>
+class DelayWithFreeze : public vessl::unit_processor<T>, protected vessl::plist<5>
 {
   using param = vessl::parameter;
 public:
   DelayWithFreeze(vessl::array<T> buffer, float sampleRate, float delayInSeconds = 0, float feedback = 0)
-    : vessl::unitProcessor<T>()
+    : vessl::unit_processor<T>()
     , fader(0.95f, 0)
     , delayProc(buffer, sampleRate, delayInSeconds, feedback)
     , freezeProc(buffer, sampleRate)
   {
   }
   
-  const parameters& getParameters() const override { return *this; }  // NOLINT(portability-template-virtual-member-function)
+  const parameters& parameters() const override { return *this; }  // NOLINT(portability-template-virtual-member-function)
 
   param time() const { return delayProc.time(); }
   param feedback() const { return delayProc.feedback(); }
@@ -44,8 +44,8 @@ public:
       freezeProc.getBuffer().setWriteIndex(delayProc.getBuffer().getWriteIndex());
       if (fader.value < 0.999f)
       {
-        auto r = input.getReader();
-        auto w = output.getWriter();
+        auto r = input.reader();
+        auto w = output.writer();
         while (r)
         {
           w << process(r.read());
@@ -60,8 +60,8 @@ public:
     {
       if (fader.value > 0.001f)
       {
-        auto r = input.getReader();
-        auto w = output.getWriter();
+        auto r = input.reader();
+        auto w = output.writer();
         while (r)
         {
           w << process(r.read());
@@ -77,7 +77,7 @@ public:
 protected:
   param elementAt(vessl::size_t index) const override
   {
-    param p[plsz] = { time(), feedback(), freezeEnabled(), freezePosition(), freezeSize() };
+    param p[num] = { time(), feedback(), freezeEnabled(), freezePosition(), freezeSize() };
     return p[index];
   }
 

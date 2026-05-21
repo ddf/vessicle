@@ -6,7 +6,7 @@
 #include "vessl/vessl.h"
 
 template<typename T = vessl::analog_t, bool smooth_pq = true>
-class Knoscillator : public vessl::unitGenerator<vessl::frame::channels<T, 3>>
+class Knoscillator : public vessl::unit_generator<vessl::frame::channels<T, 3>>
   , protected vessl::plist<21>
 {
   using sample_t = T;
@@ -58,7 +58,7 @@ public:
 
   explicit Knoscillator(float sr)
     : knoscil(sr), rotator(sr)
-    , dt(vessl::cast<phase_t>(1.0f/sr)), phaseMod(vessl::PHASE_ZERO), phaseS(vessl::PHASE_ZERO)
+    , dt(vessl::cast<phase_t>(1.0f/sr)), phaseMod(vessl::phase_zero), phaseS(vessl::phase_zero)
   {
     knoscil.knotP() = 2.f;
     knoscil.knotQ() = 1.f;
@@ -110,7 +110,7 @@ public:
   [[nodiscard]] VESSL_INLINE param rotationY() const { return rotator.rotationY(); }
   [[nodiscard]] VESSL_INLINE param rotationZ() const { return rotator.rotationZ(); }
 
-  [[nodiscard]] const parameters& getParameters() const override { return *this; }
+  [[nodiscard]] const parameter_list& parameters() const override { return *this; }
 
   VESSL_INLINE void resetRotation()
   { 
@@ -172,7 +172,7 @@ public:
     knoscil.frequency() = freq;
 
     // generate knot, then rotate it.
-    auto writer = dest.getWriter();
+    auto writer = dest.make_writer();
     while(writer.available())
     {
       phase_t fm = vessl::cast<phase_t>(modWave.evaluate(phaseMod)*fmIndex);
@@ -202,9 +202,9 @@ public:
   }
   
 protected:
-  VESSL_INLINE param elementAt(vessl::size_t index) const override
+  VESSL_INLINE param element_at(vessl::size_t index) const override
   {
-    param p[plsz] = {
+    param p[plist::num] = {
       knotTypeA(), knotTypeB(), knotMorph(), knotP(), knotQ(), knotModP(), knotModQ(),
       frequency(), fmRatio(), fmIndex(), rotRatioX(), rotRatioY(), rotRatioZ(),
       rotModX(), rotModY(), rotModZ(), squiggle(), noise(),

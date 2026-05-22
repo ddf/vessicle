@@ -51,20 +51,20 @@ private:
 
     using param = vessl::parameter;
 
-    [[nodiscard]] VESSL_INLINE param frequency() const { return params.freqInHz({ "frequency", 'f', analog_p::type }); }
+    [[nodiscard]] VESSL_INLINE param frequency() const { return params.freqInHz("frequency", 'f'); }
     
     // ratios are rotation rates around a particular axis, relative to frequency: [-1,1]
-    [[nodiscard]] VESSL_INLINE param ratioX() const { return params.ratioX({"ratio X", 'X', analog_p::type}); }
-    [[nodiscard]] VESSL_INLINE param ratioY() const { return params.ratioY({"ratio Y", 'Y', analog_p::type}); }
-    [[nodiscard]] VESSL_INLINE param ratioZ() const { return params.ratioZ({"ratio Z", 'Z', analog_p::type}); }
+    [[nodiscard]] VESSL_INLINE param ratioX() const { return params.ratioX("ratio X", 'X'); }
+    [[nodiscard]] VESSL_INLINE param ratioY() const { return params.ratioY("ratio Y", 'Y'); }
+    [[nodiscard]] VESSL_INLINE param ratioZ() const { return params.ratioZ("ratio Z", 'Z'); }
     
-    [[nodiscard]] VESSL_INLINE param modX() const   { return params.modX({"mod X", 'x', phase_p::type}); }
-    [[nodiscard]] VESSL_INLINE param modY() const   { return params.modY({"mod Y", 'y', phase_p::type}); }
-    [[nodiscard]] VESSL_INLINE param modZ() const   { return params.modZ({"mod Z", 'z', phase_p::type}); }
+    [[nodiscard]] VESSL_INLINE param modX() const   { return params.modX("mod X", 'x'); }
+    [[nodiscard]] VESSL_INLINE param modY() const   { return params.modY("mod Y", 'y'); }
+    [[nodiscard]] VESSL_INLINE param modZ() const   { return params.modZ("mod Z", 'z'); }
 
-    [[nodiscard]] VESSL_INLINE param rotationX() const { return params.rotationX({"rotation X", 'i', q31_p::type}); }
-    [[nodiscard]] VESSL_INLINE param rotationY() const { return params.rotationY({"rotation Y", 'j', q31_p::type}); }
-    [[nodiscard]] VESSL_INLINE param rotationZ() const { return params.rotationZ({"rotation Z", 'k', q31_p::type}); }
+    [[nodiscard]] VESSL_INLINE param rotationX() const { return params.rotationX("rotation X", 'i'); }
+    [[nodiscard]] VESSL_INLINE param rotationY() const { return params.rotationY("rotation Y", 'j'); }
+    [[nodiscard]] VESSL_INLINE param rotationZ() const { return params.rotationZ("rotation Z", 'k'); }
 
     [[nodiscard]] const parameter_list& parameters() const override { return *this; }
 

@@ -7,8 +7,6 @@
 template<TextureSizeType TextureSizeType = TextureSizeType::Integral>
 class BlurProcessor2D : vessl::unit_processor<float>, protected vessl::plist<1>
 {
-  using param = vessl::parameter;
-  
   struct
   {
     vessl::analog_p textureSize;
@@ -18,15 +16,17 @@ class BlurProcessor2D : vessl::unit_processor<float>, protected vessl::plist<1>
   BlurKernel kernel;
 
 public:
+  using parameter = vessl::parameter;
+  
   BlurProcessor2D(float sampleRate, BlurProcessor1D<BlurAxis::X, TextureSizeType>* blurX, BlurProcessor1D<BlurAxis::Y, TextureSizeType>* blurY, const BlurKernel& blurKernel)
     : blurX(blurX), blurY(blurY), kernel(blurKernel)
   {
-    params.textureSize.value = blurX->textureSize().readAnalog();
+    params.textureSize.value = blurX->textureSize().read_analog();
   }
 
-  const parameters& parameters() const override { return *this; }
+  const parameter_list& parameters() const override { return *this; }
 
-  param textureSize() const { return params.textureSize({ "Texture Size", 't', vessl::analog_p::type }); }
+  parameter textureSize() const { return params.textureSize("Texture Size", 't'); }
 
   void setGauss(float size, float standardDeviation, float brightness = 1.0f)
   {
@@ -88,9 +88,9 @@ public:
   }
   
 protected:
-  param elementAt(vessl::size_t index) const override
+  parameter element_at(vessl::size_t index) const override
   {
-    param p[num] = { textureSize() };
+    parameter p[num] = { textureSize() };
     return p[index];
   }
 };

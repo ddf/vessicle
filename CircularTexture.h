@@ -17,7 +17,7 @@ public:
 
   T* getData() 
   {
-    return buffer.getData();
+    return buffer.data();
   }
 
   size_t getWidth() const { return sizeX; }
@@ -25,9 +25,9 @@ public:
 
   CircularTexture subtexture(size_t w, size_t h)
   {
-    CircularTexture sub = CircularTexture(buffer.getData(), buffer.size(), w, h);
+    CircularTexture sub = CircularTexture(buffer.data(), buffer.size(), w, h);
     // have to do this because the ring constructor initializes write index to 0.
-    sub.buffer.setWriteIndex(buffer.getWriteIndex());
+    sub.buffer.set_write_index(buffer.get_write_index());
     return sub;
   }
 
@@ -39,8 +39,8 @@ public:
   T read(size_t x, size_t y)
   {
     // add buffer size so we don't have to worry about negative indices
-    size_t index = buffer.getWriteIndex() + buffer.size() - 1 - (y*sizeX + x);
-    return buffer.getData()[index%buffer.size()];
+    size_t index = buffer.get_write_index() + buffer.size() - 1 - (y*sizeX + x);
+    return buffer.data()[index%buffer.size()];
   }
 
   T readBilinear(float u, float v)

@@ -61,8 +61,8 @@ template<uint32_t FREEZE_BUFFER_SIZE>
 class Glitch : public vessl::unit_processor<GlitchSampleType>, public vessl::clockable, protected vessl::plist<6>
 {
 public:
-  using param = vessl::parameter;
-  const parameters& parameters() const override { return *this; }
+  using parameter = vessl::parameter;
+  const parameter_list& parameters() const override { return *this; }
  
 private:
   struct
@@ -121,12 +121,12 @@ public:
 
   using clockable::clock;
 
-  param repeats() const { return params.repeats({"repeats", 'r', vessl::analog_p::type });  }
-  param crush() const { return params.crush({"crush", 'c', vessl::analog_p::type }); }
-  param glitch() const { return params.glitch({ "glitch", 'g', vessl::analog_p::type }); }
-  param glitching() const { return params.glitchEnabled({ "glich enabled", 'e', vessl::binary_p::type }); }
-  param shape() const { return params.shape({ "shape", 's', vessl::analog_p::type }); }
-  param freeze() const { return params.freeze({ "freeze", 'f', vessl::binary_p::type }); }
+  parameter repeats() const { return params.repeats("repeats", 'r');  }
+  parameter crush() const { return params.crush("crush", 'c'); }
+  parameter glitch() const { return params.glitch("glitch", 'g'); }
+  parameter glitching() const { return params.glitchEnabled("glich enabled", 'e'); }
+  parameter shape() const { return params.shape("shape", 's'); }
+  parameter freeze() const { return params.freeze("freeze", 'f'); }
   float freezePhase() const { return freezeProc.phase(); }
   float envelope() const { return inputEnvelope[0]; }
   float rand() const { return glitchRand; }
@@ -164,9 +164,9 @@ public:
       }
     }
 
-    freezeProc.size() = newFreezeLength;
+    freezeProc.duration() = newFreezeLength;
     freezeProc.rate() = newReadSpeed;
-    freezeProc.enabled() = freeze().readBinary();
+    freezeProc.enabled() = freeze().read_binary();
 
     float sr = sampleRate;
     float crushParam = crush();
@@ -175,22 +175,22 @@ public:
     crushProc.depth() = bits;
     crushProc.rate() = rate;
 
-    auto inputReader = input.reader();
-    auto iew = inputEnvelope.writer();
+    auto inputReader = input.make_reader();
+    auto iew = inputEnvelope.make_writer();
     while(inputReader)
     {
-      iew << inputReader.read().toMono().value();
+      iew << inputReader.read().to_mono().value();
     }
     envelopeFollower.process(inputEnvelope, inputEnvelope);
 
     // can't use output as a process buffer because we need the dry input again for the shape stage.
     if (clocked)
     {
-      freezeProc.process<vessl::duration::mode::fade>(input, processBuffer);
+      freezeProc.process<vessl::time::mode::fade>(input, processBuffer);
     }
     else
     {
-      freezeProc.process<vessl::duration::mode::slew>(input, processBuffer);
+      freezeProc.process<vessl::time::mode::slew>(input, processBuffer);
     }
     
     crushProc.process(processBuffer, processBuffer);
@@ -210,7 +210,7 @@ public:
       if (params.glitchEnabled.value)
       {
         vessl::size_t d = i+1;
-        GlitchSampleType f = freezeProc.delay_line().read(d);
+        GlitchSampleType f = freezeProc.buffer().read(d);
         GlitchSampleType& pf = processBuffer[i];
         pf.left() = glitch(pf.left(), f.left());
         pf.right() = glitch(pf.right(), f.right());
@@ -241,9 +241,9 @@ public:
   }
 
 protected:
-  param elementAt(vessl::size_t index) const override
+  parameter element_at(vessl::size_t index) const override
   {
-    param p[num] = { repeats(), crush(), glitch(), glitching(), shape(), freeze() };
+    parameter p[num] = { repeats(), crush(), glitch(), glitching(), shape(), freeze() };
     return p[index];
   }
   void tock(vessl::size_t sampleDelay) override

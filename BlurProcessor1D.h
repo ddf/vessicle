@@ -25,8 +25,7 @@ enum class TextureSizeType : uint8_t
 template<BlurAxis Axis, TextureSizeType TextureSizeType = TextureSizeType::Integral>
 class BlurProcessor1D : public vessl::unit_processor<float>, protected vessl::plist<1>
 {  
-  using param = vessl::parameter;
-  static constexpr param::desc d_t = { "Texture Size", 't', vessl::analog_p::type };
+  using parameter = vessl::parameter;
   
   using size_t = vessl::size_t;
   using TextureType = CircularTexture<float>;
@@ -38,9 +37,9 @@ public:
     , kernel(kernel) 
   { params.textureSize.value = static_cast<float>(textureSizeX); }
   
-  const parameters& parameters() const override { return *this; }
+  const parameter_list& parameters() const override { return *this; }
 
-  param textureSize() const { return params.textureSize(d_t); }
+  parameter textureSize() const { return params.textureSize("Texture Size", 't'); }
   
   float process(const float& input) override
   {
@@ -75,9 +74,9 @@ public:
   }
   
 protected:
-  param elementAt(vessl::size_t index) const override
+  parameter element_at(vessl::size_t index) const override
   {
-    param p[num] = { textureSize() }; return p[index];
+    parameter p[num] = { textureSize() }; return p[index];
   }
 
 private:
@@ -93,7 +92,7 @@ private:
     float v = 0;
     float c = kernel.getBlurSize() * 0.5f;
     size_t samples = kernel.size();
-    size_t texSize = textureSize().readDigital();
+    size_t texSize = textureSize().read_digital();
     if (Axis == BlurAxis::X)
     {
       TextureType tex = texture.subtexture(texSize, 1);
@@ -118,7 +117,7 @@ private:
   {
     float v = 0;
     float c = kernel.getBlurSize() * 0.5f;
-    float texSize = textureSize().readAnalog();
+    float texSize = textureSize().read_analog();
     if (Axis == BlurAxis::X)
     {
       for (const BlurKernelSample& samp : kernel)

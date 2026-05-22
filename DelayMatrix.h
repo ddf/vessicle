@@ -31,29 +31,29 @@ using Smoother = vessl::smoother<float>;
 using Limiter = vessl::limiter<float>;
 using DcBlockFilter = vessl::filter<float, vessl::filtering::dc_block>;
 using LowPassFilter = vessl::filter<float, vessl::filtering::biquad<1>::low_pass>;
-using GateOscil = vessl::oscil<vessl::waves::clock<>>;
-using SineOscil = vessl::oscil<vessl::waves::sine<>>;
+using GateOscil = vessl::oscil<vessl::waves::clock<float>>;
+using SineOscil = vessl::oscil<vessl::waves::sine<float>>;
 using RandomGenerator = vessl::noise_generator<float, vessl::noise::white>;
 using DelayLine = DelayWithFreeze<float>;
-
 
 // not a public unit processor because we only process stereo input in-place.
 template<int DELAY_LINE_COUNT>
 class DelayMatrix : vessl::unit_processor<float>, vessl::clockable, protected vessl::plist<10>
 {
 public:
-  enum FreezeState : uint8_t  // NOLINT(performance-enum-size)
+  enum class FreezeState : uint8_t
   {
-    FreezeOff = 0,
-    FreezeEnter,
-    FreezeOn,
-    FreezeExit,
+    Off = 0,
+    Enter,
+    On,
+    Exit,
   };
-  using param    = vessl::parameter;
-  using desc     = param::desc;
-  using analog_p = vessl::analog_p;
-  using binary_p = vessl::binary_p;
-  using freeze_p = vessl::param<FreezeState>;
+  
+  using parameter  = vessl::parameter;
+  using desc       = parameter::desc;
+  using analog_p   = vessl::analog_p;
+  using binary_p   = vessl::binary_p;
+  using freeze_p   = vessl::param<FreezeState>;
   
   static constexpr float MIN_TIME_SECONDS = 0.002f;
   static constexpr float MAX_TIME_SECONDS = 0.25f;
@@ -252,15 +252,15 @@ public:
                                         + maxTimeSamples * MAX_SPREAD * static_cast<float>(i) 
                                         + maxTimeSamples * MAX_MOD_AMT 
                                         + static_cast<float>(MAX_SKEW_SAMPLES));
-      data.dcBlockLeft.setSampleRate(sampleRate);
-      data.dcBlockRight.setSampleRate(sampleRate);
-      data.lowPassLeft.setSampleRate(sampleRate);
-      data.lowPassRight.setSampleRate(sampleRate);
-      data.gate.setSampleRate(sampleRate);
-      data.gate.waveform.pulseWidth = 0.1f;
+      data.dcBlockLeft.set_sample_rate(sampleRate);
+      data.dcBlockRight.set_sample_rate(sampleRate);
+      data.lowPassLeft.set_sample_rate(sampleRate);
+      data.lowPassRight.set_sample_rate(sampleRate);
+      data.gate.set_sample_rate(sampleRate);
+      data.gate.waveform.pulse_width = 0.1f;
       data.gateResetCounter = 0;
-      data.limitLeft.preGain() = vessl::gain::from_scale(1.125f);
-      data.limitRight.preGain() = vessl::gain::from_scale(1.125f);
+      data.limitLeft.pre_gain() = vessl::types::gain::from_scale(1.125f);
+      data.limitRight.pre_gain() = vessl::types::gain::from_scale(1.125f);
 
       data.inputLeft = Array(pbuff + blockSize * 0, blockSize);
       data.inputRight = Array(pbuff + blockSize * 1, blockSize);
@@ -295,19 +295,19 @@ public:
     delete[] outputWet.data();
   }
   
-  param time() const { return params.time({ "time", 't', analog_p::type }); }
-  param spread() const { return params.spread({ "spread", 's', analog_p::type }); }
-  param feedback() const { return params.feedback({ "feedback", 'f', analog_p::type }); }
-  param dryWet() const { return params.dryWet({ "dry/wet", 'w', analog_p::type }); }
-  param skew() const { return params.skew({ "skew", 'k', analog_p::type }); }
-  param mod() const { return params.modIndex({ "mod", 'm', analog_p::type }); }
+  parameter time() const { return params.time("time", 't'); }
+  parameter spread() const { return params.spread("spread", 's'); }
+  parameter feedback() const { return params.feedback("feedback", 'f'); }
+  parameter dryWet() const { return params.dryWet("dry/wet", 'w'); }
+  parameter skew() const { return params.skew("skew", 'k'); }
+  parameter mod() const { return params.modIndex("mod", 'm'); }
   
   DLP& delay(vessl::size_t index) { return delayParams[index]; }
   
-  param lfo() const { return params.lfoOut({ "lfo>", 'l', analog_p::type }); }
-  param rnd() const { return params.rndOut({ "rand>", 'r', analog_p::type }); }
-  param gate() const { return params.gateOut({ "gate", 'g', binary_p::type }); }
-  param freeze() const { return params.freezeState({ "freeze state", 'z', freeze_p::type }); }
+  parameter lfo() const { return params.lfoOut("lfo>", 'l'); }
+  parameter rnd() const { return params.rndOut("rand>", 'r'); }
+  parameter gate() const { return params.gateOut("gate", 'g'); }
+  constexpr parameter freeze() const { return params.freezeState("freeze state", 'z'); }
   
 
   // set the tempo via tapping
@@ -350,12 +350,12 @@ public:
 
   void toggleFreeze()
   {
-    params.freezeState.value = params.freezeState.value == FreezeOff ? FreezeEnter : FreezeExit;
-    bool freezeEnabled = params.freezeState.value == FreezeEnter;
+    params.freezeState.value = params.freezeState.value == FreezeState::Off ? FreezeState::Enter : FreezeState::Exit;
+    bool freezeEnabled = params.freezeState.value == FreezeState::Enter;
     for (int i = 0; i < DELAY_LINE_COUNT; ++i)
     {
-      delays[i]->left.freezeEnabled() = freezeEnabled;
-      delays[i]->right.freezeEnabled() = freezeEnabled;
+      delays[i]->left.freeze_enabled() = freezeEnabled;
+      delays[i]->right.freeze_enabled() = freezeEnabled;
     }
   }
   
@@ -430,7 +430,7 @@ public:
     
     float modFreq = sampleRate / sTime.value * (1.0f / 32.f);
     
-    uLfo.fHz() = modFreq;
+    uLfo.fhz() = modFreq;
     float lfoGen = uLfo.generate();
 
     uRnd.rate() = modFreq;
@@ -481,7 +481,7 @@ public:
 #ifdef PROFILE
     const float inputStart = getElapsedBlockTime();
 #endif
-    if (params.freezeState.value != FreezeOn)
+    if (params.freezeState.value != FreezeState::On)
     {
       // setup delay inputs with last blocks results
       float skewValue = sSkew.value;
@@ -519,7 +519,7 @@ public:
         data.inputLeft >> data.dcBlockLeft >> data.limitLeft >> data.inputLeft;
         data.inputRight >> data.dcBlockRight >> data.limitRight >> data.inputRight;
 
-        if (params.freezeState.value == FreezeEnter)
+        if (params.freezeState.value == FreezeState::Enter)
         {
           float scale = 1.0f;
           float step = 1.0f / static_cast<float>(inSize);
@@ -530,7 +530,7 @@ public:
             scale -= step;
           }
         }
-        else if (params.freezeState.value == FreezeExit)
+        else if (params.freezeState.value == FreezeState::Exit)
         {
           float scale = 0.0f;
           float step = 1.0f / static_cast<float>(inSize);
@@ -569,39 +569,39 @@ public:
       GateOscil& gate = data.gate;
 
       const float delaySamples = data.time.value + modValue;
-      if (params.freezeState.value == FreezeOn)
+      if (params.freezeState.value == FreezeState::On)
       {
         // how far back we can go depends on how big the frozen section is, we don't want to push past the size of the buffer
         float maxPosition = vessl::math::min(delaySamples * 8, static_cast<float>(data.delayLength));
         float normPosition = (1.0f - sFeedback.value);
-        delay->left.freezeSize()  = delay->left.time()  = delaySamples;
-        delay->right.freezeSize() = delay->right.time() = delaySamples;
+        delay->left.freeze_duration()  = delay->left.time()  = delaySamples;
+        delay->right.freeze_duration() = delay->right.time() = delaySamples;
         
         float posL = (maxPosition - delaySamples + data.skew)*normPosition;
         float posR = (maxPosition - delaySamples - data.skew)*normPosition;
-        delay->left.freezePosition()  = posL;
-        delay->right.freezePosition() = posR;
+        delay->left.freeze_position()  = posL;
+        delay->right.freeze_position() = posR;
       }
       else
       {
-        delay->left.freezeSize()  = delay->left.time()  = delaySamples + data.skew;
-        delay->right.freezeSize() = delay->right.time() = delaySamples - data.skew;
+        delay->left.freeze_duration()  = delay->left.time()  = delaySamples + data.skew;
+        delay->right.freeze_duration() = delay->right.time() = delaySamples - data.skew;
       }
 
-      delay->left.template process<vessl::duration::mode::fade>(data.inputLeft, data.inputLeft);
-      delay->right.template process<vessl::duration::mode::fade>(data.inputRight, data.inputRight);
+      delay->left.template process<vessl::time::mode::fade>(data.inputLeft, data.inputLeft);
+      delay->right.template process<vessl::time::mode::fade>(data.inputRight, data.inputRight);
 
       // filter output
       float fltCut = static_cast<float>(data.cutoff.value);
-      data.lowPassLeft.fHz()  = fltCut;
-      data.lowPassRight.fHz() = fltCut;
+      data.lowPassLeft.fhz()  = fltCut;
+      data.lowPassRight.fhz() = fltCut;
 
       data.inputLeft  >> data.lowPassLeft  >> data.outputLeft;
       data.inputRight >> data.lowPassRight >> data.outputRight;
 
       float inputScale = data.input.value;
       
-      if (params.freezeState.value == FreezeOn)
+      if (params.freezeState.value == FreezeState::On)
       {
         data.output().scale(inputScale);
       }
@@ -612,7 +612,7 @@ public:
       // when clocked remove delay time modulation so that the gate output
       // stays in sync with the clock, keeping it true to the musical durations displayed on screen.
       float gfreq = sampleRate / (clocked ? (delaySamples - modValue) : delaySamples);
-      gate.fHz() = gfreq;
+      gate.fhz() = gfreq;
       for (vessl::size_t s = 0; s < outSize; ++s)
       {
         delayGate |= (gate.generate()*inputScale > 0.1f) ? 1 : 0;
@@ -624,13 +624,13 @@ public:
     debugCpy = stpcpy(debugCpy, msg_itoa((int)(genTime * 1000), 10));
 #endif
 
-    if (params.freezeState.value == FreezeEnter)
+    if (params.freezeState.value == FreezeState::Enter)
     {
-      params.freezeState.value = FreezeOn;
+      params.freezeState.value = FreezeState::On;
     }
-    else if (params.freezeState.value == FreezeExit)
+    else if (params.freezeState.value == FreezeState::Exit)
     {
-      params.freezeState.value = FreezeOff;
+      params.freezeState.value = FreezeState::Off;
     }
 
     float wet = sDryWet.value;
@@ -656,7 +656,7 @@ public:
   }
   
   const DelayLineData& getDelayData(int i) const { return delayData[i]; }
-  float freezePosition(int i) const { return delays[i]->left.freezePosition().readAnalog(); }
+  float freezePosition(int i) const { return delays[i]->left.freeze_position().read_analog(); }
   
   bool isClocked() const { return clocked; }
   using clockable::bpm;
@@ -664,12 +664,12 @@ public:
   int spreadMult() const { return SPREAD_DIVMULT[spreadDivMultIndex]; }
   float modValue() const { return modAmount; }
   
-  const parameters& parameters() const override { return *this; }
+  const parameter_list& parameters() const override { return *this; }
   
 protected:
-  param elementAt(vessl::size_t index) const override
+  parameter element_at(vessl::size_t index) const override
   {
-    param p[num] = { time(), spread(), feedback(), dryWet(), skew(), mod(), lfo(), rnd(), gate(), freeze() };
+    parameter p[num] = { time(), spread(), feedback(), dryWet(), skew(), mod(), lfo(), rnd(), gate(), freeze() };
     return p[index];
   }
   

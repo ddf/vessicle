@@ -14,15 +14,15 @@ using Asr = vessl::asr<float>;
 template<typename T, typename H>
 class Markov final : public unit_processor<T>, public clockable, protected vessl::plist<7>
 {
-  using param = vessl::parameter;
-  using size_t = vessl::size_t;
+public:
+  using parameter = vessl::parameter;
+  using size_t    = vessl::size_t;
   
   static constexpr int    CLOCK_PERIOD_MAX  = (1 << 17);
   static constexpr float  ATTACK_SECONDS    = 0.005f;
   static constexpr float  MIN_DECAY_SECONDS = 0.010f;
-  
-public:
-  const parameters& parameters() const override { return *this; }
+
+  [[nodiscard]] const parameter_list& parameters() const override { return *this; }
   
 private:
   struct
@@ -66,15 +66,15 @@ public:
   }
   
   // when processing, if listen is greater than 1, this is interpreted as a time-delayed gate
-  param listen() const { return params.listen({ "listen", 'l', vessl::binary_p::type }); }
-  param wordSize() const { return params.wordSize({ "word size", 'w', vessl::analog_p::type }); }
-  param variation() const { return params.variation({ "variation", 'v', vessl::analog_p::type }); }
-  param decay() const { return params.decay({ "decay", 'd', vessl::analog_p::type }); }
+  parameter listen() const { return params.listen("listen", 'l'); }
+  parameter wordSize() const { return params.wordSize("word size", 'w'); }
+  parameter variation() const { return params.variation("variation", 'v'); }
+  parameter decay() const { return params.decay("decay", 'd'); }
 
   // outputs
-  param progress() const { return params.progress({ "progress", 'p', vessl::analog_p::type }); }
-  param envelope() const { return params.envelope({ "envelope", 'e', vessl::analog_p::type }); }
-  param wordStarted() const { return params.wordStarted({ "word started", 's', vessl::binary_p::type }); }
+  parameter progress() const { return params.progress("progress", 'p'); }
+  parameter envelope() const { return params.envelope("envelope", 'e'); }
+  parameter wordStarted() const { return params.wordStarted("word started", 's'); }
 
   typename MarkovGenerator<T,H>::Chain::Stats getChainStats() const { return generator.chain().getStats(); }
   int wordSizeMs() const { return static_cast<int>(static_cast<float>(generator.chain().getCurrentWordSize()) / clockable::sample_rate_ * 1000);}
@@ -161,9 +161,9 @@ public:
   }
 
 protected:
-  param elementAt(vessl::size_t index) const override
+  parameter element_at(vessl::size_t index) const override
   {
-    param p[num] = { listen(), wordSize(), variation(), decay(), progress(), envelope(), wordStarted() };
+    parameter p[num] = { listen(), wordSize(), variation(), decay(), progress(), envelope(), wordStarted() };
     return p[index];
   }
   

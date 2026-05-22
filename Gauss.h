@@ -10,10 +10,9 @@ using HighPass = vessl::filter<float, vessl::filtering::biquad<1>::high_pass>;
 
 class Gauss : public vessl::unit_processor<GaussSampleFrame>, protected vessl::plist<7>
 {
-  using param = vessl::parameter;
-  
 public:
-  const parameters& parameters() const override { return *this; }
+  using parameter = vessl::parameter;
+  [[nodiscard]] const parameter_list& parameters() const override { return *this; }
   
 private:
   struct
@@ -97,19 +96,19 @@ public:
   }
   
   // [0,1)
-  param textureSize() const { return params.textureSize({ "Tex Size", 'T', vessl::analog_p::type }); }
+  parameter textureSize() const { return params.textureSize("Tex Size", 'T'); }
   // (-1, 1)
-  param textureTilt() const { return params.textureTilt({ "Tex Tilt", 't', vessl::analog_p::type }); }
+  parameter textureTilt() const { return params.textureTilt("Tex Tilt", 't'); }
   // [0, 1)
-  param blurSize() const { return params.blurSize({ "Blur Size", 'B', vessl::analog_p::type }); }
+  parameter blurSize() const { return params.blurSize("Blur Size", 'B'); }
   // (-1, 1)
-  param blurTilt() const { return params.blurTilt({ "Blur Tilt", 'b', vessl::analog_p::type }); }
+  parameter blurTilt() const { return params.blurTilt("Blur Tilt", 'b'); }
   // [0, 1)
-  param feedback() const { return params.feedback({ "Fdbk Amt", 'F', vessl::analog_p::type }); }
+  parameter feedback() const { return params.feedback("Fdbk Amt", 'F'); }
   // [0,1]
-  param crossFeedback() const { return params.crossFeedback({ "Crossfdbk", 'f', vessl::analog_p::type }); }
+  parameter crossFeedback() const { return params.crossFeedback("Crossfdbk", 'f'); }
   // dB, any value
-  param gain() const { return params.gain({ "Gain (dB)", 'g', vessl::analog_p::type }); }
+  parameter gain() const { return params.gain("Gain (dB)", 'g'); }
   
   BlurKernel kernel() const { return processorLeft->getKernel(); }
   float getTextureSizeLeft() const { return static_cast<float>(processorLeft->textureSize()); }
@@ -144,8 +143,8 @@ public:
     
     float tsz = vessl::easing::lerp<float>(MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE, params.textureSize.value);
     float tlt = textureTiltSmoother = (vessl::math::constrain<float>(params.textureTilt.value*TILT_SCALE, -TILT_SCALE, TILT_SCALE));
-    float tszL = textureSizeLeft = (vessl::math::constrain<float>(tsz * vessl::gain::decibels_to_scale(-tlt), MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE));
-    float tszR = textureSizeRight = (vessl::math::constrain<float>(tsz * vessl::gain::decibels_to_scale(tlt), MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE));
+    float tszL = textureSizeLeft = (vessl::math::constrain<float>(tsz * vessl::gain_t::decibels_to_scale(-tlt), MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE));
+    float tszR = textureSizeRight = (vessl::math::constrain<float>(tsz * vessl::gain_t::decibels_to_scale(tlt), MIN_TEXTURE_SIZE, MAX_TEXTURE_SIZE));
 
     processorLeft->textureSize() = tszL;
     processorRight->textureSize() = tszR;
@@ -156,7 +155,7 @@ public:
     {
       // scale max blur down so we never blur more than a maximum number of samples away
       float bscl = MIN_TEXTURE_SIZE / tszL;
-      float bszL = vessl::math::constrain(blurSizeLeft = (bsz * vessl::gain::decibels_to_scale(-blt) * bscl), MIN_BLUR_SIZE, MAX_BLUR_SIZE);
+      float bszL = vessl::math::constrain(blurSizeLeft = (bsz * vessl::gain_t::decibels_to_scale(-blt) * bscl), MIN_BLUR_SIZE, MAX_BLUR_SIZE);
       float blurIdx = bszL * (KERNEL_COUNT - 2);
       float blurLow;
       float blurFrac = vessl::math::mod(blurIdx, &blurLow);
@@ -166,7 +165,7 @@ public:
     // set right kernel
     {
       float bscl = MIN_TEXTURE_SIZE / tszR;
-      float bszR = vessl::math::constrain(blurSizeRight = (bsz * vessl::gain::decibels_to_scale(blt) * bscl), MIN_BLUR_SIZE, MAX_BLUR_SIZE);
+      float bszR = vessl::math::constrain(blurSizeRight = (bsz * vessl::gain_t::decibels_to_scale(blt) * bscl), MIN_BLUR_SIZE, MAX_BLUR_SIZE);
       float blurIdx = bszR * (KERNEL_COUNT - 2);
       float blurLow;
       float blurFrac = vessl::math::mod(blurIdx, &blurLow);
@@ -181,7 +180,7 @@ public:
     feedbackFrame.left() = procOut.left()*feedSame + procOut.right()*feedCross;
     feedbackFrame.right() = procOut.right()*feedSame + procOut.left()*feedCross;
     
-    float scale  = vessl::gain::decibels_to_scale(params.gain.value);
+    float scale  = vessl::gain_t::decibels_to_scale(params.gain.value);
     procOut.scale(scale);
     
     return procOut;
@@ -190,9 +189,9 @@ public:
   using unit_processor::process;
   
 protected:
-  param elementAt(vessl::size_t index) const override
+  parameter element_at(vessl::size_t index) const override
   {
-    param p[num] = { textureSize(), textureTilt(), blurSize(), blurTilt(), feedback(), crossFeedback(), gain() };
+    parameter p[num] = { textureSize(), textureTilt(), blurSize(), blurTilt(), feedback(), crossFeedback(), gain() };
     return p[index];
   }
 };

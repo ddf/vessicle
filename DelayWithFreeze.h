@@ -5,47 +5,55 @@
 template<typename T>
 class DelayWithFreeze : public vessl::unit_processor<T>, protected vessl::plist<5>
 {
-  using param = vessl::parameter;
 public:
-  DelayWithFreeze(vessl::array<T> buffer, float sampleRate, float delayInSeconds = 0, float feedback = 0)
+  using sample_t = T;
+  using param = vessl::parameter;
+  using binary_t = vessl::binary_t;
+  using analog_t = vessl::analog_t;
+  using array = vessl::array<T>;
+  
+  DelayWithFreeze(array buffer, analog_t sample_rate, analog_t delay_in_seconds = 0, analog_t feedback = 0)
     : vessl::unit_processor<T>()
-    , fader(0.95f, 0)
-    , delayProc(buffer, sampleRate, delayInSeconds, feedback)
-    , freezeProc(buffer, sampleRate)
+    , fader_(0.95f, 0)
+    , delay_(buffer, sample_rate, delay_in_seconds, feedback)
+    , freeze_(buffer, sample_rate)
   {
   }
-  
-  const parameters& parameters() const override { return *this; }  // NOLINT(portability-template-virtual-member-function)
 
-  param time() const { return delayProc.time(); }
-  param feedback() const { return delayProc.feedback(); }
-  param freezeEnabled() const { return params.freezeEnabled({ "freeze enabled", 'e', vessl::binary_p::type }); }
-  param freezePosition() const { return freezeProc.position(); }
-  param freezeSize() const { return freezeProc.size(); }
+  [[nodiscard]] const vessl::parameter_list& parameters() const override { return *this; }
 
-  T process(const T& in) override  // NOLINT(portability-template-virtual-member-function)
+  [[nodiscard]] param time() const { return delay_.time(); }
+  [[nodiscard]] param feedback() const { return delay_.feedback(); }
+  [[nodiscard]] param freeze_enabled() const
   {
-    vessl::binary_t frozen = params.freezeEnabled.value;
-    vessl::analog_t fade = fader = (frozen ? 1.0f : 0.0f);
-    T s1 = frozen ? in : delayProc.process(in);
+    return params_.frozen("freeze enabled", 'e');
+  }
+  [[nodiscard]] param freeze_position() const { return freeze_.position(); }
+  [[nodiscard]] param freeze_duration() const { return freeze_.duration(); }
+
+  sample_t process(const T& in) override
+  {
+    binary_t frozen = params_.frozen.value;
+    analog_t fade = fader_ = (frozen ? 1.0f : 0.0f);
+    sample_t s1 = frozen ? in : delay_.process(in);
     if (!frozen)
     {
-      freezeProc.getBuffer().setWriteIndex(delayProc.getBuffer().getWriteIndex());
+      freeze_.buffer().set_write_index(delay_.buffer().get_write_index());
     } 
-    T s2 = fade > 0 ? freezeProc.generate() : 0.f;
+    T s2 = fade > 0 ? freeze_.generate() : 0.f;
     return vessl::mixing::crossfade(s1, s2, fade);
   }
 
-  template<vessl::duration::mode TimeMode = vessl::duration::mode::slew>
-  void process(vessl::array<T> input, vessl::array<T> output)
+  template<vessl::time::mode TimeMode = vessl::time::mode::slew>
+  void process(array input, array output)
   {
-    if (params.freezeEnabled.value)
+    if (params_.frozen.value)
     {
-      freezeProc.getBuffer().setWriteIndex(delayProc.getBuffer().getWriteIndex());
-      if (fader.value < 0.999f)
+      freeze_.buffer().set_write_index(delay_.buffer().get_write_index());
+      if (fader_.value < 0.999f)
       {
-        auto r = input.reader();
-        auto w = output.writer();
+        auto r = input.make_reader();
+        auto w = output.make_writer();
         while (r)
         {
           w << process(r.read());
@@ -53,15 +61,15 @@ public:
       }
       else
       {
-        freezeProc.template generate<TimeMode>(output);
+        freeze_.template generate<TimeMode>(output);
       }
     }
     else
     {
-      if (fader.value > 0.001f)
+      if (fader_.value > 0.001f)
       {
-        auto r = input.reader();
-        auto w = output.writer();
+        auto r = input.make_reader();
+        auto w = output.make_writer();
         while (r)
         {
           w << process(r.read());
@@ -69,24 +77,24 @@ public:
       }
       else
       {
-        delayProc.template process<TimeMode>(input, output);
+        delay_.template process<TimeMode>(input, output);
       }
     }
   }
   
 protected:
-  param elementAt(vessl::size_t index) const override
+  [[nodiscard]] param element_at(vessl::size_t index) const override
   {
-    param p[num] = { time(), feedback(), freezeEnabled(), freezePosition(), freezeSize() };
+    param p[num] = { time(), feedback(), freeze_enabled(), freeze_position(), freeze_duration() };
     return p[index];
   }
 
 private:
   struct
   {
-    vessl::binary_p freezeEnabled;
-  } params;
-  vessl::smoother<> fader;
-  vessl::delay<T> delayProc;
-  vessl::freeze<T> freezeProc;
+    vessl::binary_p frozen;
+  } params_;
+  vessl::smoother<analog_t> fader_;
+  vessl::delay<T> delay_;
+  vessl::freeze<T> freeze_;
 };

@@ -25,8 +25,8 @@ public:
   void learn(const T& value) { markovChain.learn(value); }
   T generate() override { return markovChain.generate(); }
   
-  const parameters& parameters() const override { return *this; }
+  const parameter_list& parameters() const override { return *this; }
   
 protected:
-  vessl::parameter elementAt(vessl::size_t index) const override { return vessl::parameter::none(); }
+  vessl::parameter element_at(vessl::size_t index) const override { return vessl::parameter::none(); }
 };

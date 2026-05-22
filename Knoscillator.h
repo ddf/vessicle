@@ -94,17 +94,17 @@ public:
   [[nodiscard]] VESSL_INLINE param knotModQ() const { return knoscil.knotModQ(); }
   
   // in Hz
-  [[nodiscard]] VESSL_INLINE param frequency() const { return params.freqInHz({ "frequency", 'f', analog_p::type }); }
-  [[nodiscard]] VESSL_INLINE param fmRatio() const   { return params.fmRatio({"fm ratio", 'R', analog_p::type }); }
-  [[nodiscard]] VESSL_INLINE param fmIndex() const   { return params.fmIndex({"fm index", 'r', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param frequency() const { return params.freqInHz("frequency", 'f'); }
+  [[nodiscard]] VESSL_INLINE param fmRatio() const   { return params.fmRatio("fm ratio", 'R'); }
+  [[nodiscard]] VESSL_INLINE param fmIndex() const   { return params.fmIndex("fm index", 'r'); }
   [[nodiscard]] VESSL_INLINE param rotRatioX() const { return rotator.ratioX(); }
   [[nodiscard]] VESSL_INLINE param rotRatioY() const { return rotator.ratioY(); }
   [[nodiscard]] VESSL_INLINE param rotRatioZ() const { return rotator.ratioZ(); }
   [[nodiscard]] VESSL_INLINE param rotModX() const   { return rotator.modX(); }
   [[nodiscard]] VESSL_INLINE param rotModY() const   { return rotator.modY(); }
   [[nodiscard]] VESSL_INLINE param rotModZ() const   { return rotator.modZ(); }
-  [[nodiscard]] VESSL_INLINE param squiggle() const  { return params.squiggleAmt({"squiggle amount", 'S', analog_p::type}); }
-  [[nodiscard]] VESSL_INLINE param noise() const     { return params.noiseAmt({"noise amount", 'N', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param squiggle() const  { return params.squiggleAmt("squiggle amount", 'S'); }
+  [[nodiscard]] VESSL_INLINE param noise() const     { return params.noiseAmt("noise amount", 'N'); }
   
   [[nodiscard]] VESSL_INLINE param rotationX() const { return rotator.rotationX(); }
   [[nodiscard]] VESSL_INLINE param rotationY() const { return rotator.rotationY(); }

@@ -1,22 +1,22 @@
 #pragma once
 
+#include "vessl/vessl.h"
 #include "KnotOscillator.h"
 #include "Rotator3D.h"
 #include "Noise.hpp"
-#include "vessl/vessl.h"
 
 template<typename T = vessl::analog_t, bool smooth_pq = true>
-class Knoscillator : public vessl::unit_generator<vessl::frame::channels<T, 3>>
+class Knoscillator : public vessl::unit_generator<vessl::sample::frame<T,3>>
   , protected vessl::plist<21>
 {
   using sample_t = T;
 public:
-  using SampleType = vessl::frame::channels<sample_t, 3>;
+  using SampleType = vessl::sample::frame<T,3>;
   using KnotOscil = KnotOscillator<sample_t>;
   using KnotType = typename KnotOscil::KnotType;
   
 private:
-  using SineWave = vessl::waves::sine<sample_t>;
+  using SineWave = vessl::sample::waves::sine<sample_t>;
   using Rotator = Rotator3D<sample_t>;
   
   using size_t = vessl::size_t;
@@ -33,7 +33,7 @@ private:
   static constexpr analog_t zoomFar = 60.0f * KnotOscil::KNOT_SCALE;
   static constexpr analog_t zoomNear = 6.0f * KnotOscil::KNOT_SCALE;
   
-  using NoiseTable = vessl::wavetable<float, noiseDim*noiseDim>;
+  using NoiseTable = vessl::sample::wavetable<float, noiseDim*noiseDim>;
 
 public:
   KnotOscil      knoscil;

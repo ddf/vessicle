@@ -3,13 +3,13 @@
 #include "vessl/vessl.h"
 
 template<typename T = vessl::analog_t>
-class Rotator3D : public vessl::unit_processor<vessl::frame::channels<T,3>>
+class Rotator3D : public vessl::unit_processor<vessl::sample::frame<T,3>>
                 , protected vessl::plist<10>
 {
     using sample_t = T;
 
 public:
-    using SampleType = vessl::frame::channels<T,3>;
+    using SampleType = vessl::sample::frame<T,3>;
     using Transform = vessl::transform33<sample_t>;
 
 private:
@@ -99,7 +99,7 @@ private:
       params.rotationY.value = vessl::math::cos<q31_t>(ry);
       params.rotationZ.value = vessl::math::sin<q31_t>(rz);
 
-      return rotator.process(in);
+      return rotator.multiply(in);
     }
 
     VESSL_INLINE void process(vessl::array<SampleType> input, vessl::array<SampleType> output) override
@@ -127,8 +127,8 @@ private:
 
       rotator.set_euler(rx, ry, rz);
 
-      sample_t* fromData = fromRotator.matrix().data();
-      sample_t* toData = rotator.matrix().data();
+      sample_t* fromData = fromRotator.data();
+      sample_t* toData = rotator.data();
       sample_t  pct = vessl::cast<sample_t>(1.0f / input.size());
 
       sample_t rotDeltas[3*3];
@@ -142,7 +142,7 @@ private:
       while(reader.available())
       {
         SampleType in = reader.read();
-        writer << fromRotator.process(in);
+        writer << fromRotator.multiply(in);
 
         // lerp matrix values towards our target rotation
         for(int i = 0; i < 9; ++i)

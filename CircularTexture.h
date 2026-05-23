@@ -5,7 +5,7 @@
 template<typename T>
 class CircularTexture
 {
-  vessl::ring<T> buffer;
+  vessl::ring_buffer<T> buffer;
   size_t sizeX, sizeY;
 
 public:

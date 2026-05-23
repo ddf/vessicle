@@ -1,9 +1,5 @@
 #pragma once
 
-#pragma once
-
-#include <tgmath.h>
-
 #include "vessl/vessl.h"
 #include "CircularTexture.h"
 #include "BlurKernel.h"
@@ -91,7 +87,6 @@ private:
   {
     float v = 0;
     float c = kernel.getBlurSize() * 0.5f;
-    size_t samples = kernel.size();
     size_t texSize = textureSize().read_digital();
     if (Axis == BlurAxis::X)
     {
@@ -129,7 +124,7 @@ private:
         int x2 = x1 + 1;
         float xt = x - static_cast<float>(x1);
 
-        v += vessl::easing::lerp(texture.read(x1, 0), texture.read(x2, 0), xt) * samp.weight;
+        v += vessl::math::lerp(texture.read(x1, 0), texture.read(x2, 0), xt) * samp.weight;
       }
     }
     else
@@ -164,15 +159,15 @@ private:
         int yb2 = yb1 + 1;
         float ybt = yb - static_cast<float>(yb1);
 
-        float xa1 = vessl::easing::lerp(texA.read(x1, ya1), texA.read(x2, ya1), xt);
-        float xa2 = vessl::easing::lerp(texA.read(x1, ya2), texA.read(x2, ya2), xt);
-        float va  = vessl::easing::lerp(xa1, xa2, yat);
+        float xa1 = vessl::math::lerp(texA.read(x1, ya1), texA.read(x2, ya1), xt);
+        float xa2 = vessl::math::lerp(texA.read(x1, ya2), texA.read(x2, ya2), xt);
+        float va  = vessl::math::lerp(xa1, xa2, yat);
 
-        float xb1 = vessl::easing::lerp(texB.read(x1, yb1), texB.read(x2, yb1), xt);
-        float xb2 = vessl::easing::lerp(texB.read(x1, yb2), texB.read(x2, yb2), xt);
-        float vb  = vessl::easing::lerp(xb1, xb2, ybt);
+        float xb1 = vessl::math::lerp(texB.read(x1, yb1), texB.read(x2, yb1), xt);
+        float xb2 = vessl::math::lerp(texB.read(x1, yb2), texB.read(x2, yb2), xt);
+        float vb  = vessl::math::lerp(xb1, xb2, ybt);
 
-        v += vessl::easing::lerp(va, vb, texSizeBlend) * samp.weight;
+        v += vessl::math::lerp(va, vb, texSizeBlend) * samp.weight;
       }
     }
 

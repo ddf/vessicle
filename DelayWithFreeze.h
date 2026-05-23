@@ -41,7 +41,7 @@ public:
       freeze_.buffer().set_write_index(delay_.buffer().get_write_index());
     } 
     T s2 = fade > 0 ? freeze_.generate() : 0.f;
-    return vessl::mixing::crossfade(s1, s2, fade);
+    return vessl::sample::crossfade(s1, s2, fade);
   }
 
   template<vessl::time::mode TimeMode = vessl::time::mode::slew>
@@ -94,7 +94,7 @@ private:
   {
     vessl::binary_p frozen;
   } params_;
-  vessl::smoother<analog_t> fader_;
-  vessl::delay<T> delay_;
-  vessl::freeze<T> freeze_;
+  vessl::math::easing::smoother<analog_t> fader_;
+  vessl::processors::delay<T> delay_;
+  vessl::processors::freeze<T> freeze_;
 };

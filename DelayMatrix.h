@@ -27,18 +27,18 @@ DESCRIPTION:
 #include "vessl/vessl.h"
 
 using Array = vessl::array<float>;
-using Smoother = vessl::smoother<float>;
-using Limiter = vessl::limiter<float>;
-using DcBlockFilter = vessl::filter<float, vessl::filtering::dc_block>;
-using LowPassFilter = vessl::filter<float, vessl::filtering::biquad<1>::low_pass>;
-using GateOscil = vessl::oscil<vessl::waves::clock<float>>;
-using SineOscil = vessl::oscil<vessl::waves::sine<float>>;
-using RandomGenerator = vessl::noise_generator<float, vessl::noise::white>;
+using Smoother = vessl::math::easing::smoother<float>;
+using Limiter = vessl::processors::limiter<float>;
+using DcBlockFilter = vessl::processors::filter<float, vessl::filtering::dc_block>;
+using LowPassFilter = vessl::processors::filter<float, vessl::filtering::biquad<1>::low_pass>;
+using GateOscil = vessl::generators::oscil<vessl::sample::waves::clock<float>>;
+using SineOscil = vessl::generators::oscil<vessl::sample::waves::sine<float>>;
+using RandomGenerator = vessl::generators::noise<float, vessl::noise::white>;
 using DelayLine = DelayWithFreeze<float>;
 
 // not a public unit processor because we only process stereo input in-place.
 template<int DELAY_LINE_COUNT>
-class DelayMatrix : vessl::unit_processor<float>, vessl::clockable, protected vessl::plist<10>
+class DelayMatrix : vessl::unit_processor<float>, vessl::time::clockable, protected vessl::plist<10>
 {
 public:
   enum class FreezeState : uint8_t
@@ -259,8 +259,8 @@ public:
       data.gate.set_sample_rate(sampleRate);
       data.gate.waveform.pulse_width = 0.1f;
       data.gateResetCounter = 0;
-      data.limitLeft.pre_gain() = vessl::types::gain::from_scale(1.125f);
-      data.limitRight.pre_gain() = vessl::types::gain::from_scale(1.125f);
+      data.limitLeft.pre_gain() = vessl::sample::gain::from_scale(1.125f);
+      data.limitRight.pre_gain() = vessl::sample::gain::from_scale(1.125f);
 
       data.inputLeft = Array(pbuff + blockSize * 0, blockSize);
       data.inputRight = Array(pbuff + blockSize * 1, blockSize);
@@ -381,11 +381,11 @@ public:
       clockMultIndex = (CLOCK_MULT_COUNT - 1) / 2;
       if (timeParam >= 0.53f)
       {
-        clockMultIndex = static_cast<uint8_t>(vessl::easing::lerp(static_cast<float>(clockMultIndex), static_cast<float>(CLOCK_MULT_COUNT), (timeParam - 0.53f) * 2.12f));
+        clockMultIndex = static_cast<uint8_t>(vessl::math::lerp(static_cast<float>(clockMultIndex), static_cast<float>(CLOCK_MULT_COUNT), (timeParam - 0.53f) * 2.12f));
       }
       else if (timeParam <= 0.47f)
       {
-        clockMultIndex = static_cast<uint8_t>(vessl::easing::lerp(static_cast<float>(clockMultIndex), 0.f, (0.47f - timeParam) * 2.12f));
+        clockMultIndex = static_cast<uint8_t>(vessl::math::lerp(static_cast<float>(clockMultIndex), 0.f, (0.47f - timeParam) * 2.12f));
       }
       // equivalent to multiplying the BPM
       timeRaw = period() / static_cast<float>(CLOCK_MULT[clockMultIndex]);
@@ -393,11 +393,11 @@ public:
       spreadDivMultIndex = (SPREAD_DIVMULT_COUNT - 1) / 2;
       if (spreadParam >= 0.53f)
       {
-        spreadDivMultIndex = static_cast<uint8_t>(vessl::easing::lerp(static_cast<float>(spreadDivMultIndex), static_cast<float>(SPREAD_DIVMULT_COUNT), (spreadParam - 0.53f) * 2.12f));
+        spreadDivMultIndex = static_cast<uint8_t>(vessl::math::lerp(static_cast<float>(spreadDivMultIndex), static_cast<float>(SPREAD_DIVMULT_COUNT), (spreadParam - 0.53f) * 2.12f));
       }
       else if (spreadParam <= 0.47f)
       {
-        spreadDivMultIndex = static_cast<uint8_t>(vessl::easing::lerp(static_cast<float>(spreadDivMultIndex), 0.f, (0.47f - spreadParam) * 2.12f));
+        spreadDivMultIndex = static_cast<uint8_t>(vessl::math::lerp(static_cast<float>(spreadDivMultIndex), 0.f, (0.47f - spreadParam) * 2.12f));
       }
       float sdm = static_cast<float>(SPREAD_DIVMULT[spreadDivMultIndex]);
       sSpread = (sdm < 0 ? -1.0f / sdm : sdm);
@@ -407,15 +407,15 @@ public:
     // not clocked
     else
     {
-      timeRaw = vessl::math::constrain(vessl::easing::lerp(MIN_TIME_SECONDS, MAX_TIME_SECONDS, timeParam / 0.99f), MIN_TIME_SECONDS, MAX_TIME_SECONDS) * sampleRate;
+      timeRaw = vessl::math::constrain(vessl::math::lerp(MIN_TIME_SECONDS, MAX_TIME_SECONDS, timeParam / 0.99f), MIN_TIME_SECONDS, MAX_TIME_SECONDS) * sampleRate;
 
       if (spreadParam <= 0.5f)
       {
-        sSpread = vessl::easing::lerp(MIN_SPREAD, MID_SPREAD, spreadParam*2);
+        sSpread = vessl::math::lerp(MIN_SPREAD, MID_SPREAD, spreadParam*2);
       }
       else
       {
-        sSpread = vessl::math::constrain(vessl::easing::lerp(MID_SPREAD, MAX_SPREAD, (spreadParam - 0.5f)*2.03f), MID_SPREAD, MAX_SPREAD);
+        sSpread = vessl::math::constrain(vessl::math::lerp(MID_SPREAD, MAX_SPREAD, (spreadParam - 0.5f)*2.03f), MID_SPREAD, MAX_SPREAD);
       }
     }
 
@@ -434,18 +434,18 @@ public:
     float lfoGen = uLfo.generate();
 
     uRnd.rate() = modFreq;
-    rndGen = uRnd.generate<vessl::easing::smoothstep>();
+    rndGen = uRnd.generate<vessl::math::easing::smoothstep>();
 
     modAmount = 0;
     float modParam = params.modIndex.value;
     if (modParam >= 0.53f)
     {
-      modAmount = lfoGen * vessl::math::constrain(vessl::easing::lerp(0.f, MAX_MOD_AMT, (modParam - 0.53f)*2.12f), 0.f, MAX_MOD_AMT);
+      modAmount = lfoGen * vessl::math::constrain(vessl::math::lerp(0.f, MAX_MOD_AMT, (modParam - 0.53f)*2.12f), 0.f, MAX_MOD_AMT);
     }
     else if (modParam <= 0.47f)
     {
-      float modMax = vessl::math::constrain(vessl::easing::lerp(0.f, MAX_MOD_AMT, (0.47f - modParam)*2.12f), 0.f, MAX_MOD_AMT);
-      modAmount = vessl::easing::lerp(-modMax, modMax, rndGen);
+      float modMax = vessl::math::constrain(vessl::math::lerp(0.f, MAX_MOD_AMT, (0.47f - modParam)*2.12f), 0.f, MAX_MOD_AMT);
+      modAmount = vessl::math::lerp(-modMax, modMax, rndGen);
     }
 
     for (int i = 0; i < DELAY_LINE_COUNT; ++i)
@@ -467,7 +467,7 @@ public:
       }
       data.skew = MAX_SKEW_SAMPLES * invert * sSkew.value;
       data.input = dps.input.value;
-      data.cutoff = vessl::easing::interp<vessl::easing::expo::in>(MIN_CUTOFF, MAX_CUTOFF, dps.cutoff.value);
+      data.cutoff = vessl::math::easing::interp<vessl::math::easing::expo::in>(MIN_CUTOFF, MAX_CUTOFF, dps.cutoff.value);
 
       for (int f = 0; f < DELAY_LINE_COUNT; ++f)
       {

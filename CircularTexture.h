@@ -5,7 +5,9 @@
 template<typename T>
 class CircularTexture
 {
-  vessl::ring_buffer<T> buffer;
+  using size_t = vessl::size_t;
+  
+  vessl::sample::ring_buffer<T> buffer;
   size_t sizeX, sizeY;
 
 public:
@@ -55,8 +57,8 @@ public:
     size_t y2 = y1 + 1;
     float yt = y - static_cast<float>(y1);
 
-    float xv1 = vessl::easing::lerp(read(x1, y1), read(x2, y1), xt);
-    float xv2 = vessl::easing::lerp(read(x1, y2), read(x2, y2), xt);
-    return vessl::easing::lerp(xv1, xv2, yt);
+    float xv1 = vessl::math::lerp(read(x1, y1), read(x2, y1), xt);
+    float xv2 = vessl::math::lerp(read(x1, y2), read(x2, y2), xt);
+    return vessl::math::lerp(xv1, xv2, yt);
   }
 };

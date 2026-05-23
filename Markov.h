@@ -3,16 +3,14 @@
 #include "vessl/vessl.h"
 #include "MarkovGenerator.h"
 
-using vessl::unit;
-using vessl::unit_processor;
-using vessl::array;
-using vessl::clockable;
-using Slew = vessl::slew<float>;
-using Smoother = vessl::smoother<float>;
-using Asr = vessl::asr<float>;
+using Slew = vessl::processors::slew<float>;
+using Smoother = vessl::math::easing::smoother<float>;
+using Asr = vessl::generators::asr<float>;
 
 template<typename T, typename H>
-class Markov final : public unit_processor<T>, public clockable, protected vessl::plist<7>
+class Markov final : public vessl::unit_processor<T>
+                   , public vessl::time::clockable
+                   , protected vessl::plist<7>
 {
 public:
   using parameter = vessl::parameter;
@@ -53,7 +51,7 @@ private:
   int minWordSizeSamples;
   
 public:
-  Markov(float sampleRate, size_t bufferSize) : unit_processor<T>()
+  Markov(float sampleRate, size_t bufferSize) : vessl::unit_processor<T>()
   , clockable(sampleRate, 16, CLOCK_PERIOD_MAX, 120)
   , listenEnvelope(sampleRate, 5, 5), decaySmoother(0.9f, MIN_DECAY_SECONDS)
   , expoGenerateEnvelope(ATTACK_SECONDS, MIN_DECAY_SECONDS, sampleRate), linearGenerateEnvelope(ATTACK_SECONDS, MIN_DECAY_SECONDS, sampleRate)
@@ -85,7 +83,7 @@ public:
     return input;
   }
 
-  void process(array<T> in, array<T> out) override
+  void process(vessl::array<T> in, vessl::array<T> out) override
   {
     size_t inSize = in.size();
     tick(inSize);
@@ -117,9 +115,10 @@ public:
       wordStartedGate -= blockSize;
     }
 
-    envelopeShape = decaySmoother = decay();
+    decaySmoother = decay().read_analog();
+    envelopeShape = decaySmoother.value;
 
-    typename array<T>::writer w(out);
+    typename vessl::array<T>::writer w(out);
     while (w)
     {
       if (samplesToReset == 0)
@@ -193,7 +192,7 @@ private:
     else if (envelopeShape >= 0.53f)
     {
       float t = (envelopeShape - 0.53f) * 2.12f;
-      wordGateLength = static_cast<int>(vessl::easing::lerp(static_cast<float>(minWordGateLength), static_cast<float>(wordSize - minWordGateLength), t));
+      wordGateLength = static_cast<int>(vessl::math::lerp(static_cast<float>(minWordGateLength), static_cast<float>(wordSize - minWordGateLength), t));
     }
     else
     {
@@ -210,8 +209,8 @@ private:
     expoGenerateEnvelope.gate(state);
     linearGenerateEnvelope.gate(state);
 
-    expoGenerateEnvelope.generate<vessl::easing::expo::out>();
-    linearGenerateEnvelope.generate<vessl::easing::linear>();
+    expoGenerateEnvelope.generate<vessl::math::easing::expo::out>();
+    linearGenerateEnvelope.generate<vessl::math::easing::linear>();
   }
 
   float getEnvelopeLevel() const
@@ -221,7 +220,7 @@ private:
     if (envelopeShape <= 0.47f)
     {
       float t = (0.47f - envelopeShape) * 2.12f;
-      return vessl::easing::lerp<float>(line, expo, t);
+      return vessl::math::lerp<float>(line, expo, t);
     }
     return line;
   }
@@ -243,11 +242,11 @@ private:
       { 4,   1,   2,  4, 8, 16, 12  }, // 4
 };
 
-    float divMultT = vessl::easing::lerp(0.f, static_cast<float>(DIV_MULT_LEN - 1), static_cast<float>(wordSize()));
+    float divMultT = vessl::math::lerp(0.f, static_cast<float>(DIV_MULT_LEN - 1), static_cast<float>(wordSize()));
     bool smoothDivMult = samplesSinceLastTock >= CLOCK_PERIOD_MAX;
     int divMultIdx = smoothDivMult ? static_cast<int>(divMultT) : static_cast<int>(round(divMultT));
     int intervalIdx = 3;
-    float wordScale = smoothDivMult ? vessl::easing::lerp<float>(DIV_MULT[divMultIdx], DIV_MULT[divMultIdx+1], divMultT - static_cast<float>(divMultIdx))
+    float wordScale = smoothDivMult ? vessl::math::lerp<float>(DIV_MULT[divMultIdx], DIV_MULT[divMultIdx+1], divMultT - static_cast<float>(divMultIdx))
                                     : DIV_MULT[divMultIdx];
 
     float wordVariationParam = variation();
@@ -265,7 +264,7 @@ private:
     // smooth random variation
     if (wordVariationParam >= 0.53f)
     {
-      float scale = vessl::easing::lerp<float>(1.f, 4.f, randf()*varyAmt);
+      float scale = vessl::math::lerp<float>(1.f, 4.f, randf()*varyAmt);
       // weight towards shorter
       if (randf() > 0.25f) { scale = 1.0f / scale; }
       wordScale *= scale;
@@ -277,7 +276,7 @@ private:
       // when varyAmt is zero, we want the interval in the middle of the array (ie 1).
       // so we offset from 0.5f with a random value between -0.5 and 0.5, scaled by varyAmt
       // (ie as vary amount gets larger we can pick values closer to the ends of the array).
-      intervalIdx = static_cast<int>(vessl::easing::lerp<float>(0, INTERVALS_LEN - 1, 0.5f + (randf() - 0.5f) * varyAmt));
+      intervalIdx = static_cast<int>(vessl::math::lerp<float>(0, INTERVALS_LEN - 1, 0.5f + (randf() - 0.5f) * varyAmt));
       float interval = INTERVALS[intervalIdx];
       wordScale *= interval;
       if (interval < 1)

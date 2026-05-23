@@ -50,15 +50,17 @@ static constexpr GlitchSettings GLITCH_SETTINGS[] = {
 };
 static constexpr count_t GLITCH_SETTINGS_COUNT = sizeof(GLITCH_SETTINGS) / sizeof(GlitchSettings);
 
-using GlitchSampleType = vessl::frame::stereo::analog_t;
+using GlitchSampleType = vessl::sample::type<float>::stereo;
 using BufferType = vessl::array<GlitchSampleType>;
-using BitCrush = vessl::bitcrush<GlitchSampleType, 24>;
-using Freeze = vessl::freeze<GlitchSampleType>;
-using EnvelopeFollower = vessl::follow<float>;
+using BitCrush = vessl::processors::bitcrush<GlitchSampleType, 24>;
+using Freeze = vessl::processors::freeze<GlitchSampleType>;
+using EnvelopeFollower = vessl::processors::follow<float>;
 using Array = vessl::array<float>;
 
 template<uint32_t FREEZE_BUFFER_SIZE>
-class Glitch : public vessl::unit_processor<GlitchSampleType>, public vessl::clockable, protected vessl::plist<6>
+class Glitch : public vessl::unit_processor<GlitchSampleType>
+             , public vessl::time::clockable
+             , protected vessl::plist<6>
 {
 public:
   using parameter = vessl::parameter;
@@ -203,7 +205,7 @@ public:
     {
       if (stepGlitchLfo(glitchSpeed))
       {
-        glitchRand = vessl::random::range<float>(0.f, 1.f);
+        glitchRand = vessl::math::random::range<float>(0.f, 1.f);
         params.glitchEnabled.value = glitchRand < glitchProb;
       }
 

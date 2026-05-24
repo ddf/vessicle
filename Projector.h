@@ -5,14 +5,15 @@
 // projects a 3D coordinate to 2D using the simplest version of the formula.
 // @todo add additionl parameters like FOV?
 template<typename T>
-class Projector : public vessl::unit_processor<vessl::frame::channels<T, 3>, vessl::frame::channels<T, 2>>
+class Projector 
+  : public vessl::unit_processor<vessl::sample::frame<T, 3>, vessl::sample::frame<T, 2>>
   , protected vessl::plist<1>
 {
 public:
   using analog_t = vessl::analog_t;
   using analog_p = vessl::analog_p;
-  using input_t = vessl::frame::channels<T, 3>;
-  using output_t = vessl::frame::channels<T, 2>;
+  using input_t = vessl::sample::frame<T, 3>;
+  using output_t = vessl::sample::frame<T, 2>;
   using param = vessl::parameter;
   
   explicit Projector(analog_t initial_zoom = 1.0f)
@@ -20,7 +21,7 @@ public:
     params_.zoom.value = initial_zoom;
   }
   
-  [[nodiscard]] VESSL_INLINE param zoom() const{ return params_.zoom({"zoom", 'Z', analog_p::type}); }
+  [[nodiscard]] VESSL_INLINE param zoom() const{ return params_.zoom("zoom", 'Z'); }
   
   const parameter_list& parameters() const override { return *this; }
   

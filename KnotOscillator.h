@@ -188,12 +188,12 @@ public:
         ? (knotM + vessl::math::min(kminc, params.knotMorph.value - knotM))
         : (knotM - vessl::math::min(kminc, knotM - params.knotMorph.value));
 
-      cx1 = vessl::math::lerpp(x1[i], x1[j], knotM);
-      cx3 = vessl::cast<phase_t>(vessl::math::lerpp(x3[i], x3[j], knotM));
-      cy1 = vessl::math::lerpp(y1[i], y1[j], knotM);
-      cy2 = vessl::cast<phase_t>(vessl::math::lerpp(y2[i], y2[j], knotM));
-      cz1 = vessl::math::lerpp(z1[i], z1[j], knotM);
-      cz2 = vessl::math::lerpp(z2[i], z2[j], knotM);
+      cx1 = vessl::math::lerp(x1[i], x1[j], knotM);
+      cx3 = vessl::cast<phase_t>(vessl::math::lerp(x3[i], x3[j], knotM));
+      cy1 = vessl::math::lerp(y1[i], y1[j], knotM);
+      cy2 = vessl::cast<phase_t>(vessl::math::lerp(y2[i], y2[j], knotM));
+      cz1 = vessl::math::lerp(z1[i], z1[j], knotM);
+      cz2 = vessl::math::lerp(z2[i], z2[j], knotM);
     }
 
     int i = static_cast<int>(knotA);
@@ -216,8 +216,8 @@ public:
     x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<sample_t>(phaseT1) * TORUS_SCALE;
     y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<sample_t>(phaseT1) * TORUS_SCALE;
 
-    sample_t cx2 = vessl::math::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
-    sample_t cy3 = vessl::math::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
+    sample_t cx2 = vessl::math::lerp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
+    sample_t cy3 = vessl::math::lerp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
 
     a = sample(phaseP1, phaseQ1, phaseZM , cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
@@ -237,8 +237,8 @@ public:
       x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<sample_t>(phaseT2) * TORUS_SCALE;
       y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<sample_t>(phaseT2) * TORUS_SCALE;
 
-      cx2 = vessl::math::lerpp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
-      cy3 = vessl::math::lerpp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
+      cx2 = vessl::math::lerp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
+      cy3 = vessl::math::lerp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
 
       coord_t c = sample(phaseP1, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
       coord_t d = sample(phaseP2, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);

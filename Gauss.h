@@ -120,7 +120,7 @@ public:
   {
     // Note: the way feedback is applied is based on how Clouds does it
     // see: https://github.com/pichenettes/eurorack/tree/master/clouds
-    feedbackAmount = vessl::math::easing::interp<vessl::math::easing::quad::out, float>(0.f, 0.99f, params.feedback.value);
+    feedbackAmount = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 0.99f, params.feedback.value);
     float fdbk = feedbackAmount.value;
     float feedbackAmtLeft = fdbk;
     float feedbackAmtRight = fdbk;

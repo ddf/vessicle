@@ -467,7 +467,7 @@ public:
       }
       data.skew = MAX_SKEW_SAMPLES * invert * sSkew.value;
       data.input = dps.input.value;
-      data.cutoff = vessl::math::easing::interp<vessl::math::easing::expo::in>(MIN_CUTOFF, MAX_CUTOFF, dps.cutoff.value);
+      data.cutoff = vessl::math::interp<vessl::math::easing::expo::in>(MIN_CUTOFF, MAX_CUTOFF, dps.cutoff.value);
 
       for (int f = 0; f < DELAY_LINE_COUNT; ++f)
       {

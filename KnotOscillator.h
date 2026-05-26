@@ -77,7 +77,7 @@ private:
   phase_t phaseZ;
   phase_t dt;
   float   sr_;
-  coord_t a;
+  coord_t xyz_;
 
 public:
   explicit KnotOscillator(float sampleRate)
@@ -166,7 +166,7 @@ public:
     return generate<true>();
   }
 
-  template<bool smooth_pq = true>
+  template<bool SmoothPQ = true>
   VESSL_INLINE coord_t generate()
   {
     // calculate coefficients based on knot type and morph settings
@@ -219,33 +219,43 @@ public:
     sample_t cx2 = vessl::math::lerp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
     sample_t cy3 = vessl::math::lerp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
 
-    a = sample(phaseP1, phaseQ1, phaseZM , cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+    coord_t a = sample(phaseP1, phaseQ1, phaseZM , cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
     // support fractional P and Q values by generating a curve
     // that is a bilinear interpolation of phase-sync'd curves
     // for F(P,Q), F(P+1,Q), F(P,Q+1), F(P+1,Q+1).
-    if (smooth_pq)
+    if (SmoothPQ)
     {
-      sample_t pd = vessl::cast<T>(params.knotP.value - kp);
-      sample_t qd = vessl::cast<T>(params.knotQ.value - kq);
-      phase_t phaseP2 = phaseP * (kp + 1) + fm;
-      phase_t phaseQ2 = phaseQ * (kq + 1) + fm;
-      phase_t phaseT2 = phaseQ2;
+      sample_t pd = vessl::cast<sample_t>(params.knotP.value - kp);
+      sample_t qd = vessl::cast<sample_t>(params.knotQ.value - kq);
+      
+      //if (pd != 0 || qd != 0)
+      {
+        phase_t phaseP2 = phaseP1 + phaseP;
+        phase_t phaseQ2 = phaseQ1 + phaseQ;
+        phase_t phaseT2 = phaseQ2;
 
-      coord_t b = sample(phaseP2, phaseQ1, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+        coord_t b = sample(phaseP2, phaseQ1, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
-      x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<sample_t>(phaseT2) * TORUS_SCALE;
-      y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<sample_t>(phaseT2) * TORUS_SCALE;
+        x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<sample_t>(phaseT2) * TORUS_SCALE;
+        y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<sample_t>(phaseT2) * TORUS_SCALE;
 
-      cx2 = vessl::math::lerp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
-      cy3 = vessl::math::lerp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
+        cx2 = vessl::math::lerp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
+        cy3 = vessl::math::lerp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
 
-      coord_t c = sample(phaseP1, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
-      coord_t d = sample(phaseP2, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+        coord_t c = sample(phaseP1, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
+        coord_t d = sample(phaseP2, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
-      a = a + (b - a) * pd;
-      b = c + (d - c) * pd;
-      a = a + (b - a) * qd;
+        // @todo return to pretty arithmetic statements when the operators are working correctly.
+        //a = a + (b - a) * pd;
+        coord_t a_b_p(b);
+        a_b_p.subtract(a).scale(pd).add(a).copy_to(a);
+        //b = c + (d - c) * pd;
+        coord_t c_d_p(d);
+        c_d_p.subtract(c).scale(pd).add(c).copy_to(b);
+        //a = a + (b - a) * qd;
+        b.subtract(a).scale(qd).add(a).copy_to(a);
+      }
     }
 
     phase_t freqZ = dt * params.frequency.value;
@@ -255,6 +265,7 @@ public:
     phaseQ += freqQ;
     phaseZ += freqZ;
 
+    xyz_ = a;
     return a;
   }
   
@@ -264,7 +275,7 @@ public:
   VESSL_INLINE phase_t pq() const { return phaseQ; }
   VESSL_INLINE phase_t pi() const { return dt; }
   VESSL_INLINE float   sr() const { return sr_; }
-  VESSL_INLINE coord_t xyz() const { return a; }
+  VESSL_INLINE coord_t xyz() const { return xyz_; }
   
 protected:
   [[nodiscard]] VESSL_INLINE parameter element_at(vessl::size_t index) const override

@@ -5,7 +5,7 @@
 #include "Rotator3D.h"
 #include "Noise.hpp"
 
-template<typename T = vessl::analog_t, bool smooth_pq = true>
+template<typename T = vessl::analog_t, bool SmoothPQ = true>
 class Knoscillator : public vessl::unit_generator<vessl::sample::frame<T,3>>
   , protected vessl::plist<21>
 {
@@ -30,8 +30,6 @@ private:
   
   static constexpr size_t noiseDim = 128;
   static constexpr float  noiseStep = 4.0f / noiseDim;
-  static constexpr analog_t zoomFar = 60.0f * KnotOscil::KNOT_SCALE;
-  static constexpr analog_t zoomNear = 6.0f * KnotOscil::KNOT_SCALE;
   
   using NoiseTable = vessl::sample::wavetable<float, noiseDim*noiseDim>;
 
@@ -134,7 +132,7 @@ public:
     knoscil.frequency() = freq;
     knoscil.phaseMod()  = fm;
 
-    SampleType coord = knoscil.template generate<smooth_pq>();
+    SampleType coord = knoscil.template generate<SmoothPQ>();
     coord = rotator.process(coord);
     
     // phase_t st = phaseS + fm;
@@ -179,7 +177,7 @@ public:
       phaseMod += mInc;
 
       knoscil.phaseMod() = fm;
-      writer << knoscil.template generate<smooth_pq>();
+      writer << knoscil.template generate<SmoothPQ>();
     }
     
     rotator.process(dest, dest);

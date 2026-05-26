@@ -90,10 +90,14 @@ private:
       analog_t rxf = params.ratioX.value;
       analog_t ryf = params.ratioY.value;
       analog_t rzf = params.ratioZ.value;
+      
+      phase_t xInc = rxf > 0 ? fInc*rxf : (fInc*rxf) + vessl::phase_360;
+      phase_t yInc = ryf > 0 ? fInc*ryf : (fInc*ryf) + vessl::phase_360;
+      phase_t zInc = rzf > 0 ? fInc*rzf : (fInc*rzf) + vessl::phase_360;
 
-      phaseX += fInc*rxf;
-      phaseY += fInc*ryf;
-      phaseZ += fInc*rzf;
+      phaseX += xInc;
+      phaseY += yInc;
+      phaseZ += zInc;
 
       params.rotationX.value = vessl::math::sin<q31_t>(rx);
       params.rotationY.value = vessl::math::cos<q31_t>(ry);

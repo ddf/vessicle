@@ -5,7 +5,7 @@
 #include "Rotator3D.h"
 #include "Noise.hpp"
 
-template<typename T = vessl::analog_t, bool SmoothPQ = true>
+template<typename T, bool SmoothPQ>
 class Knoscillator : public vessl::unit_generator<vessl::sample::frame<T,3>>
   , protected vessl::plist<21>
 {

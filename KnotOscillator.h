@@ -216,8 +216,8 @@ public:
     x2[static_cast<int>(KnotType::TORUS)] = vessl::math::sin<sample_t>(phaseT1) * TORUS_SCALE;
     y3[static_cast<int>(KnotType::TORUS)] = vessl::math::cos<sample_t>(phaseT1) * TORUS_SCALE;
 
-    sample_t cx2 = vessl::math::lerp(x2[i], x2[j], m); // interp(x2, i, j, lerp);
-    sample_t cy3 = vessl::math::lerp(y3[i], y3[j], m); // interp(y3, i, j, lerp);
+    sample_t cx2 = vessl::math::lerp(x2[i], x2[j], m);
+    sample_t cy3 = vessl::math::lerp(y3[i], y3[j], m);
 
     coord_t a = sample(phaseP1, phaseQ1, phaseZM , cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
@@ -259,8 +259,8 @@ public:
     }
 
     phase_t freqZ = dt * params.frequency.value;
-    phase_t freqP = freqZ; //(1.f+params.knotModP.value);
-    phase_t freqQ = freqZ; //(1.f+params.knotModQ.value);
+    phase_t freqP = freqZ * (1.f+params.knotModP.value);
+    phase_t freqQ = freqZ * (1.f+params.knotModQ.value);
     phaseP += freqP;
     phaseQ += freqQ;
     phaseZ += freqZ;

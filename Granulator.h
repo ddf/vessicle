@@ -5,14 +5,14 @@
 template<typename T, unsigned ChannelCount, unsigned MaxGrains>
 class Granulator : public vessl::unit_processor<vessl::sample::frame<T, ChannelCount>>
                  , public vessl::generator<vessl::sample::frame<T, ChannelCount>>
-                 , protected vessl::plist<4>
+                 , protected vessl::plist<5>
 {
 public:
   using Parameter = vessl::parameter;
   using SampleType = vessl::sample::frame<T, ChannelCount>;
   using RecordSampleType = typename vessl::sample::type<T>::mono;
   
-  [[nodiscard]] const vessl::parameter_list& parameters() const override { return *this; }
+  [[nodiscard]] const parameter_list& parameters() const override { return *this; }
   
   // length of a grain in seconds (duration_t)
   [[nodiscard]] Parameter grain_duration() const { return params_.grain_duration("g.dur", 'd'); }
@@ -22,6 +22,8 @@ public:
   [[nodiscard]] Parameter grain_offset() const { return params_.grain_offset("g.off", 'o'); }
   // how often grains are started (duration_t)
   [[nodiscard]] Parameter grain_rate() const { return params_.grain_rate("g.rate", 'r'); }
+  // how a grain is panned in the multi-channel field [-1,1]
+  [[nodiscard]] Parameter grain_pan() const { return params_.grain_pan("g.pan", 'p'); }
   
   // starts a new grain
   VESSL_INLINE void trigger(float sample_delay = 0)
@@ -32,6 +34,7 @@ public:
       grain.speed = params_.grain_speed.value;
       grain.size = params_.grain_duration.value.samples * grain.speed;
       grain.start = record_buffer_.get_write_index() - grain.size - params_.grain_offset.value.samples;
+      grain.pan = vessl::math::constrain(params_.grain_pan.value, -1.f, 1.f);
       
       // for now
       float env = 0.5f;
@@ -62,6 +65,7 @@ public:
     }
     
     SampleType accum = SampleType(0);
+    SampleType samp;
     RecordSampleType* buffer = record_buffer_.data();
     for (int i = active_grain_count_ - 1; i >= 0; i--)
     {
@@ -78,8 +82,8 @@ public:
         RecordSampleType& si = buffer[i&record_buffer_size_mask_];
         RecordSampleType& sj = buffer[j&record_buffer_size_mask_];
         RecordSampleType grn = vessl::math::lerp(si, sj, t) * env;
-        // @todo balance / panning
-        accum += SampleType(grn.value());
+        vessl::sample::spatialize(grn.value(), grain.pan, &samp);
+        accum += samp;
       }
       
       grain.ramp += grain.speed;
@@ -121,6 +125,7 @@ protected:
       case 1: return grain_speed();
       case 2: return grain_offset();
       case 3: return grain_rate();
+      case 4: return grain_pan();
       default: return Parameter::none();
     }
   }
@@ -139,6 +144,7 @@ private:
     vessl::analog_p   grain_speed;
     vessl::duration_p grain_offset;
     vessl::duration_p grain_rate;
+    vessl::analog_p   grain_pan;
   } params_;
   
   struct Grain
@@ -146,10 +152,10 @@ private:
     float start;
     float size;
     float speed;
+    float pan;
     float attack_mult;
     float decay_start;
     float decay_mult;
-    float balance;
     
     float ramp;
   };

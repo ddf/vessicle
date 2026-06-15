@@ -16,7 +16,7 @@ public:
   
   // length of a grain in seconds (duration_t)
   [[nodiscard]] Parameter grain_duration() const { return params_.grain_duration("g.dur", 'd'); }
-  // playback speed of grain
+  // playback speed of grain, clamped to [-2,2]
   [[nodiscard]] Parameter grain_speed() const { return params_.grain_speed("g.spd", 's'); }
   // how far back in time the grain start should be moved (duration_t)
   [[nodiscard]] Parameter grain_offset() const { return params_.grain_offset("g.off", 'o'); }
@@ -31,9 +31,13 @@ public:
     if (active_grain_count_ < MaxGrains)
     {
       Grain& grain = grains_[active_grain_count_++];
-      grain.speed = params_.grain_speed.value;
+      grain.speed = vessl::math::constrain(params_.grain_speed.value, 0.5f, 2.f);
       grain.size = params_.grain_duration.value.samples * grain.speed;
-      grain.start = record_buffer_.get_write_index() - grain.size - params_.grain_offset.value.samples;
+      grain.start = record_buffer_.get_write_index()
+                  - grain.size 
+                  - params_.grain_offset.value.samples
+                  // make sure we're working with positive indices
+                  + record_buffer_.size();
       grain.pan = vessl::math::constrain(params_.grain_pan.value, -1.f, 1.f);
       
       // for now
@@ -51,7 +55,20 @@ public:
   [[nodiscard]] VESSL_INLINE SampleType process(const SampleType &in) override
   {
     record_buffer_.write(in.to_mono());
-    return params_.grain_rate.value.samples > 0 ? generate() : SampleType(0);
+    return generate();
+  }
+  
+  VESSL_INLINE void process(const vessl::array<SampleType>& in, vessl::array<SampleType> out)
+  {
+    auto rin = in.make_reader();
+    //auto wout = out.make_writer();
+    while (rin)
+    {
+      SampleType s = rin.read();
+      record_buffer_.write(s.to_mono());
+    }
+    
+    generate(out);
   }
   
   [[nodiscard]] VESSL_INLINE SampleType generate() override
@@ -98,20 +115,109 @@ public:
     return accum;
   }
   
+  VESSL_INLINE void generate(vessl::array<SampleType> out)
+  {
+    if (const float grain_spacing = params_.grain_rate.value.samples; grain_spacing > 0)
+    {
+      float trigger_delay = grain_spacing - grain_rate_phasor_;
+      grain_rate_phasor_ += out.size();
+    
+      while (grain_rate_phasor_ >= grain_spacing)
+      {
+        grain_rate_phasor_ -= grain_spacing;
+        trigger(trigger_delay);
+        trigger_delay += grain_spacing;
+      }
+    }
+    
+    out.fill(SampleType(0));
+    
+    SampleType samp;
+    for (int g = active_grain_count_ - 1; g >= 0; g--)
+    {
+      Grain& grain = grains_[g];
+      const float grain_pos = grain.start + grain.ramp;
+      // block copy the number of samples we'll need for this grain from our buffer into our scratch space
+      vessl::size_t block_size = out.size() * 2;
+      vessl::size_t scratch_start = static_cast<size_t>(grain_pos);
+      vessl::size_t scratch_end = scratch_start + block_size;
+
+      if (block_size > 0)
+      {
+        scratch_start &= record_buffer_size_mask_;
+        scratch_end &= record_buffer_size_mask_;
+        if (scratch_start < scratch_end)
+        {
+          vessl::array scratch(scratch_buffer_, block_size);
+          vessl::array block(record_buffer_.data() + scratch_start, block_size);
+          block.copy_to(scratch);
+        }
+        else
+        {
+          vessl::size_t to_end = record_buffer_.size() - scratch_start;
+          
+          vessl::array block_a(record_buffer_.data() + scratch_start, to_end);
+          vessl::array scratch_a(scratch_buffer_, to_end);
+          block_a.copy_to(scratch_a);
+          
+          vessl::array block_b(record_buffer_.data(), block_size - to_end);
+          vessl::array scratch_b(scratch_buffer_ + to_end, block_size - to_end);
+          block_b.copy_to(scratch_b);
+        }
+      
+        float scratch_pos = grain_pos - vessl::math::floor(grain_pos);
+        bool grain_done = false;
+        for (int i = 0; i < out.size() && !grain_done; i++)
+        {
+          SampleType& gro = out[i];
+          if (grain.ramp >= 0)
+          {
+            float env = grain.ramp < grain.decay_start 
+                      ? grain.ramp * grain.attack_mult 
+                      : (grain.size - grain.ramp) * grain.decay_mult;
+            int x = static_cast<int>(scratch_pos);
+            int y = x+1;
+            float t = scratch_pos - x;
+            RecordSampleType& si = scratch_buffer_[x];
+            RecordSampleType& sj = scratch_buffer_[y];
+            RecordSampleType grn = vessl::math::lerp(si, sj, t) * env;
+            vessl::sample::spatialize(grn.value(), grain.pan, &samp);
+            gro += samp;
+          }
+          
+          scratch_pos += grain.speed;
+          grain.ramp += grain.speed;
+          
+          grain_done = grain.ramp >= grain.size;
+        }
+        
+        // swap with last active grain when finished
+        if (grain_done)
+        {
+          grains_[g] = grains_[--active_grain_count_];
+        }
+      }
+    }
+  }
+  
   // should only be called immediately after process/generate
   [[nodiscard]] bool started_grain() const { return grain_rate_phasor_ == 0; }
   
   [[nodiscard]] int active_grain_count() const { return active_grain_count_;}
   
   // buffer_size must be a power of two!
-  static Granulator* create(vessl::size_t buffer_size)
+  static Granulator* create(vessl::size_t block_size, vessl::size_t buffer_size)
   {
+    RecordSampleType* scratch = new RecordSampleType[block_size*2];
     RecordSampleType* buffer = new RecordSampleType[buffer_size];
-    return new Granulator(buffer, buffer_size);
+    Granulator* granulator = new Granulator(buffer, buffer_size);
+    granulator->scratch_buffer_ = scratch;
+    return granulator;
   }
   
   static void destroy(Granulator* granulator)
   {
+    delete[] granulator->scratch_buffer_;
     delete[] granulator->record_buffer_.data();
     delete granulator;
   }
@@ -132,12 +238,13 @@ protected:
   
 private:
   Granulator(RecordSampleType* buffer, size_t buffer_size)
-  : record_buffer_(buffer, buffer_size)
-  , record_buffer_size_mask_(buffer_size - 1)
+    : record_buffer_(buffer, buffer_size)
+    , record_buffer_size_mask_(buffer_size - 1)
+    , scratch_buffer_(nullptr)
   {
-    
+
   }
-  
+
   struct 
   {
     vessl::duration_p grain_duration;
@@ -166,4 +273,6 @@ private:
   
   vessl::sample::delay_line<RecordSampleType> record_buffer_;
   vessl::size_t record_buffer_size_mask_;
+  
+  RecordSampleType* scratch_buffer_;
 };

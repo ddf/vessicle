@@ -66,6 +66,7 @@ public:
     {
       SampleType s = rin.read();
       record_buffer_.write(s.to_mono());
+      //wout << generate();
     }
     
     generate(out);
@@ -206,7 +207,7 @@ public:
   [[nodiscard]] int active_grain_count() const { return active_grain_count_;}
   
   // buffer_size must be a power of two!
-  static Granulator* create(vessl::size_t block_size, vessl::size_t buffer_size)
+  static Granulator* create(vessl::size_t buffer_size, vessl::size_t block_size)
   {
     RecordSampleType* scratch = new RecordSampleType[block_size*2];
     RecordSampleType* buffer = new RecordSampleType[buffer_size];

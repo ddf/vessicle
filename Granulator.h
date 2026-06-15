@@ -49,17 +49,26 @@ public:
       grain.decay_mult = 1.0f / (next_decay * grain.size);
       
       grain.ramp = -sample_delay;
+      
+      grain_triggered_ = true;
     }
   }
+    
+  // should only be called immediately after process/generate
+  [[nodiscard]] bool started_grain() const { return grain_triggered_; }
+  
+  [[nodiscard]] int active_grain_count() const { return active_grain_count_;}
 
   [[nodiscard]] VESSL_INLINE SampleType process(const SampleType &in) override
   {
+    grain_triggered_ = false;
     record_buffer_.write(in.to_mono());
     return generate();
   }
   
   VESSL_INLINE void process(const vessl::array<SampleType>& in, vessl::array<SampleType> out)
   {
+    grain_triggered_ = false;
     auto rin = in.make_reader();
     //auto wout = out.make_writer();
     while (rin)
@@ -201,11 +210,6 @@ public:
     }
   }
   
-  // should only be called immediately after process/generate
-  [[nodiscard]] bool started_grain() const { return grain_rate_phasor_ == 0; }
-  
-  [[nodiscard]] int active_grain_count() const { return active_grain_count_;}
-  
   // buffer_size must be a power of two!
   static Granulator* create(vessl::size_t buffer_size, vessl::size_t block_size)
   {
@@ -270,6 +274,7 @@ private:
   
   unsigned grain_rate_phasor_ = 0;
   unsigned active_grain_count_ = 0;
+  unsigned grain_triggered_ = 0;
   Grain grains_[MaxGrains];
   
   vessl::sample::delay_line<RecordSampleType> record_buffer_;

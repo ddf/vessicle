@@ -11,6 +11,7 @@ public:
   using Parameter = vessl::parameter;
   using SampleType = vessl::sample::frame<T, ChannelCount>;
   using RecordSampleType = typename vessl::sample::type<T>::mono;
+  using GrainEnvelope = vessl::sample::waves::picket<T>;
   
   [[nodiscard]] const parameter_list& parameters() const override { return *this; }
   
@@ -24,6 +25,8 @@ public:
   [[nodiscard]] Parameter grain_rate() const { return params_.grain_rate("g.rate", 'r'); }
   // how a grain is panned in the multi-channel field [-1,1]
   [[nodiscard]] Parameter grain_pan() const { return params_.grain_pan("g.pan", 'p'); }
+  
+  GrainEnvelope envelope;
   
   // starts a new grain
   VESSL_INLINE void trigger(float sample_delay = 0)
@@ -39,16 +42,8 @@ public:
                   // make sure we're working with positive indices
                   + record_buffer_.size();
       grain.pan = vessl::math::constrain(params_.grain_pan.value, -1.f, 1.f);
-      
-      // for now
-      float env = 0.5f;
-      float next_attack = vessl::math::constrain(env, 0.01f, 0.99f);
-      float next_decay = 1.0f - next_attack;
-      grain.decay_start = next_attack * grain.size;
-      grain.attack_mult = 1.0f / (next_attack * grain.size);
-      grain.decay_mult = 1.0f / (next_decay * grain.size);
-      
-      grain.ramp = -sample_delay;
+      grain.ramp = sample_delay > 0 ? -(vessl::phase_360 / sample_delay) : 0;
+      grain.ramp_step = vessl::phase_360 / params_.grain_duration.value.samples;
       
       grain_triggered_ = true;
     }
@@ -57,7 +52,7 @@ public:
   // should only be called immediately after process/generate
   [[nodiscard]] bool started_grain() const { return grain_triggered_; }
   
-  [[nodiscard]] int active_grain_count() const { return active_grain_count_;}
+  [[nodiscard]] int active_grain_count() const { return active_grain_count_; }
 
   [[nodiscard]] VESSL_INLINE SampleType process(const SampleType &in) override
   {
@@ -94,15 +89,14 @@ public:
     SampleType accum = SampleType(0);
     SampleType samp;
     RecordSampleType* buffer = record_buffer_.data();
+    constexpr vessl::analog_t to_analog = 1.0f / vessl::phase_360;
     for (int i = active_grain_count_ - 1; i >= 0; i--)
     {
       Grain& grain = grains_[i];
       if (grain.ramp >= 0)
       {
-        float pos = grain.start + grain.ramp;
-        float env = grain.ramp < grain.decay_start 
-                  ? grain.ramp * grain.attack_mult 
-                  : (grain.size - grain.ramp) * grain.decay_mult;
+        float pos = grain.start + grain.size * (grain.ramp * to_analog);
+        T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp));
         int i = static_cast<int>(pos);
         int j = i+1;
         float t = pos - i;
@@ -113,10 +107,10 @@ public:
         accum += samp;
       }
       
-      grain.ramp += grain.speed;
+      grain.ramp += grain.ramp_step;
       
       // swap with last active grain when finished
-      if (grain.ramp >= grain.size)
+      if (grain.ramp >= vessl::phase_360)
       {
         grains_[i] = grains_[--active_grain_count_];
       }
@@ -143,10 +137,11 @@ public:
     out.fill(SampleType(0));
     
     SampleType samp;
+    constexpr vessl::analog_t to_analog = 1.0f / vessl::phase_360;
     for (int g = active_grain_count_ - 1; g >= 0; g--)
     {
       Grain& grain = grains_[g];
-      const float grain_pos = grain.start + grain.ramp;
+      const float grain_pos = grain.start + grain.size * (grain.ramp * to_analog);
       // block copy the number of samples we'll need for this grain from our buffer into our scratch space
       vessl::size_t block_size = out.size() * 2;
       vessl::size_t scratch_start = static_cast<size_t>(grain_pos);
@@ -182,9 +177,7 @@ public:
           SampleType& gro = out[i];
           if (grain.ramp >= 0)
           {
-            float env = grain.ramp < grain.decay_start 
-                      ? grain.ramp * grain.attack_mult 
-                      : (grain.size - grain.ramp) * grain.decay_mult;
+            T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp));
             int x = static_cast<int>(scratch_pos);
             int y = x+1;
             float t = scratch_pos - x;
@@ -196,9 +189,9 @@ public:
           }
           
           scratch_pos += grain.speed;
-          grain.ramp += grain.speed;
+          grain.ramp += grain.ramp_step;
           
-          grain_done = grain.ramp >= grain.size;
+          grain_done = grain.ramp >= vessl::phase_360;
         }
         
         // swap with last active grain when finished
@@ -265,13 +258,11 @@ private:
     float size;
     float speed;
     float pan;
-    float attack_mult;
-    float decay_start;
-    float decay_mult;
     
-    float ramp;
+    vessl::digital_t ramp; // phase, but allowing for negative
+    vessl::digital_t ramp_step;
   };
-  
+
   unsigned grain_rate_phasor_ = 0;
   unsigned active_grain_count_ = 0;
   unsigned grain_triggered_ = 0;

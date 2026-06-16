@@ -190,7 +190,7 @@ public:
     feedbackFrame.right() = procOut.right()*feedSame + procOut.left()*feedCross;
     
     float scale  = vessl::math::decibels_to_scale(params.gain.value);
-    procOut.scale(scale);
+    procOut *= scale;
     
     return procOut;
   }

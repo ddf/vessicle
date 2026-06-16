@@ -166,7 +166,7 @@ protected:
     return p[index];
   }
   
-  void tock(size_t sampleDelay) override
+  void tock(period_t sampleDelay) override
   {
     samplesSinceLastTock = -static_cast<int>(sampleDelay);
 

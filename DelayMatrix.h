@@ -31,8 +31,8 @@ using Smoother = vessl::math::easing::smoother<float>;
 using Limiter = vessl::processors::limiter<float>;
 using DcBlockFilter = vessl::processors::filter<float, vessl::filtering::dc_block>;
 using LowPassFilter = vessl::processors::filter<float, vessl::filtering::biquad<1>::low_pass>;
-using GateOscil = vessl::generators::oscil<vessl::sample::waves::clock<float>>;
-using SineOscil = vessl::generators::oscil<vessl::sample::waves::sine<float>>;
+using GateOscil = vessl::generators::oscil<vessl::sample::waves::unipolar::square<float>>;
+using SineOscil = vessl::generators::oscil<vessl::sample::waves::bipolar::sine<float>>;
 using RandomGenerator = vessl::generators::noise<float, vessl::noise::white>;
 using DelayLine = DelayWithFreeze<float>;
 

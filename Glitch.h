@@ -248,7 +248,8 @@ protected:
     parameter p[num] = { repeats(), crush(), glitch(), glitching(), shape(), freeze() };
     return p[index];
   }
-  void tock(vessl::size_t sampleDelay) override
+  
+  void tock(period_t sample_delay) override
   {
     samplesSinceLastTap = 0;
       

@@ -16,7 +16,7 @@ public:
   using KnotType = typename KnotOscil::KnotType;
   
 private:
-  using SineWave = vessl::sample::waves::sine<sample_t>;
+  using SineWave = vessl::sample::waves::bipolar::sine<sample_t>;
   using Rotator = Rotator3D<sample_t>;
   
   using size_t = vessl::size_t;

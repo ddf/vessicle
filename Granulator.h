@@ -11,7 +11,7 @@ public:
   using Parameter = vessl::parameter;
   using SampleType = vessl::sample::frame<T, ChannelCount>;
   using RecordSampleType = typename vessl::sample::type<T>::mono;
-  using GrainEnvelope = vessl::sample::waves::picket<T>;
+  using GrainEnvelope = vessl::sample::waves::unipolar::triangle<T>;
   
   [[nodiscard]] const parameter_list& parameters() const override { return *this; }
   

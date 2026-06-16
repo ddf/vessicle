@@ -247,14 +247,18 @@ public:
         coord_t d = sample(phaseP2, phaseQ2, phaseZM, cx1, cx2, cx3, cy1, cy2, cy3, cz1, cz2);
 
         // @todo return to pretty arithmetic statements when the operators are working correctly.
+        auto aa = a.as_array();
+        auto bb = b.as_array();
+        auto cc = c.as_array();
+        auto dd = d.as_array();
         //a = a + (b - a) * pd;
         coord_t a_b_p(b);
-        a_b_p.subtract(a).scale(pd).add(a).copy_to(a);
+        a_b_p.as_array().subtract(aa).scale(pd).add(aa).copy_to(aa);
         //b = c + (d - c) * pd;
         coord_t c_d_p(d);
-        c_d_p.subtract(c).scale(pd).add(c).copy_to(b);
+        c_d_p.as_array().subtract(cc).scale(pd).add(cc).copy_to(bb);
         //a = a + (b - a) * qd;
-        b.subtract(a).scale(qd).add(a).copy_to(a);
+        bb.subtract(aa).scale(qd).add(aa).copy_to(aa);
       }
     }
 

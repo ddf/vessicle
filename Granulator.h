@@ -5,7 +5,7 @@
 template<typename T, unsigned ChannelCount, unsigned MaxGrains>
 class Granulator : public vessl::unit_processor<vessl::sample::frame<T, ChannelCount>>
                  , public vessl::generator<vessl::sample::frame<T, ChannelCount>>
-                 , protected vessl::plist<5>
+                 , protected vessl::plist<6>
 {
 public:
   using Parameter = vessl::parameter;
@@ -25,6 +25,8 @@ public:
   [[nodiscard]] Parameter grain_rate() const { return params_.grain_rate("g.rate", 'r'); }
   // how a grain is panned in the multi-channel field [-1,1]
   [[nodiscard]] Parameter grain_pan() const { return params_.grain_pan("g.pan", 'p'); }
+  // linear scale on amplitude of grain
+  [[nodiscard]] Parameter grain_volume() const { return params_.grain_volume("g.vol", 'v'); }
   
   GrainEnvelope envelope;
   
@@ -42,6 +44,7 @@ public:
                   // make sure we're working with positive indices
                   + record_buffer_.size();
       grain.pan = vessl::math::constrain(params_.grain_pan.value, -1.f, 1.f);
+      grain.vol = params_.grain_volume.value;
       grain.ramp = sample_delay > 0 ? -(vessl::phase_360 / sample_delay) : 0;
       grain.ramp_step = vessl::phase_360 / params_.grain_duration.value.samples;
       
@@ -96,7 +99,7 @@ public:
       if (grain.ramp >= 0)
       {
         float pos = grain.start + grain.size * (grain.ramp * to_analog);
-        T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp));
+        T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp)) * grain.vol;
         int i = static_cast<int>(pos);
         int j = i+1;
         float t = pos - i;
@@ -177,7 +180,7 @@ public:
           SampleType& gro = out[i];
           if (grain.ramp >= 0)
           {
-            T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp));
+            T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp)) * grain.vol;
             int x = static_cast<int>(scratch_pos);
             int y = x+1;
             float t = scratch_pos - x;
@@ -230,6 +233,7 @@ protected:
       case 2: return grain_offset();
       case 3: return grain_rate();
       case 4: return grain_pan();
+      case 5: return grain_volume();
       default: return Parameter::none();
     }
   }
@@ -250,17 +254,20 @@ private:
     vessl::duration_p grain_offset;
     vessl::duration_p grain_rate;
     vessl::analog_p   grain_pan;
+    vessl::analog_p   grain_volume;
   } params_;
   
   struct Grain
   {
+    vessl::digital_t ramp; // phase, but allowing for negative
+    vessl::digital_t ramp_step;
+    
     float start;
     float size;
     float speed;
     float pan;
-    
-    vessl::digital_t ramp; // phase, but allowing for negative
-    vessl::digital_t ramp_step;
+    float vol;
+    float padding;
   };
 
   unsigned grain_rate_phasor_ = 0;

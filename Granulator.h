@@ -5,7 +5,7 @@
 template<typename T, unsigned ChannelCount, unsigned MaxGrains>
 class Granulator : public vessl::unit_processor<vessl::sample::frame<T, ChannelCount>>
                  , public vessl::generator<vessl::sample::frame<T, ChannelCount>>
-                 , protected vessl::plist<6>
+                 , protected vessl::plist<7>
 {
 public:
   using Parameter = vessl::parameter;
@@ -27,6 +27,8 @@ public:
   [[nodiscard]] Parameter grain_pan() const { return params_.grain_pan("g.pan", 'p'); }
   // linear scale on amplitude of grain
   [[nodiscard]] Parameter grain_volume() const { return params_.grain_volume("g.vol", 'v'); }
+  // grains will play in reverse if true
+  [[nodiscard]] Parameter grain_reverse() const { return params_.grain_reverse("g.rev", 'f'); }
   
   GrainEnvelope envelope;
   
@@ -37,15 +39,27 @@ public:
     {
       Grain& grain = grains_[active_grain_count_++];
       grain.speed = vessl::math::constrain(params_.grain_speed.value, 0.5f, 2.f);
-      grain.size = params_.grain_duration.value.samples * grain.speed;
-      grain.start = record_buffer_.get_write_index()
-                  - grain.size 
-                  - params_.grain_offset.value.samples
-                  // make sure we're working with positive indices
-                  + record_buffer_.size();
+      grain.dir = params_.grain_reverse.value ? -1.f : 1.f;
+      if (params_.grain_reverse.value)
+      {
+        // start at the end of the grain and play in reverse
+        grain.size = params_.grain_duration.value.samples * grain.speed * -1.f;
+        grain.start = record_buffer_.get_write_index()
+                    - params_.grain_offset.value.samples
+                    + record_buffer_.size();
+      }
+      else
+      {
+        grain.size = params_.grain_duration.value.samples * grain.speed;
+        grain.start = record_buffer_.get_write_index()
+                    - grain.size 
+                    - params_.grain_offset.value.samples
+                    // make sure we're working with positive indices
+                    + record_buffer_.size(); 
+      }
       grain.pan = vessl::math::constrain(params_.grain_pan.value, -1.f, 1.f);
       grain.vol = params_.grain_volume.value;
-      grain.ramp = sample_delay > 0 ? -(vessl::phase_360 / sample_delay) : 0;
+      grain.ramp = sample_delay > 0 ? -(static_cast<float>(vessl::phase_360) / sample_delay) : 0;
       grain.ramp_step = vessl::phase_360 / params_.grain_duration.value.samples;
       
       grain_triggered_ = true;
@@ -98,7 +112,8 @@ public:
       Grain& grain = grains_[i];
       if (grain.ramp >= 0)
       {
-        float pos = grain.start + grain.size * (grain.ramp * to_analog);
+        float gt  = grain.ramp*to_analog;
+        float pos = grain.start + grain.size * gt;
         T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp)) * grain.vol;
         int i = static_cast<int>(pos);
         int j = i+1;
@@ -140,24 +155,26 @@ public:
     out.fill(SampleType(0));
     
     SampleType samp;
-    constexpr vessl::analog_t to_analog = 1.0f / vessl::phase_360;
+    constexpr vessl::analog_t to_analog = 1.0f / static_cast<float>(vessl::phase_360);
     for (int g = active_grain_count_ - 1; g >= 0; g--)
     {
       Grain& grain = grains_[g];
       const float grain_pos = grain.start + grain.size * (grain.ramp * to_analog);
-      // block copy the number of samples we'll need for this grain from our buffer into our scratch space
-      vessl::size_t block_size = out.size() * 2;
-      vessl::size_t scratch_start = static_cast<size_t>(grain_pos);
-      vessl::size_t scratch_end = scratch_start + block_size;
+      // block copy the maximum number of samples we'll need for this grain from our buffer into our scratch space
+      vessl::size_t scratch_write_size = out.size() * 2;
+      vessl::size_t scratch_start = grain.dir > 0 
+        ? static_cast<size_t>(grain_pos) 
+        : static_cast<size_t>(grain_pos + 2) - scratch_write_size;
+      vessl::size_t scratch_end = scratch_start + scratch_write_size;
 
-      if (block_size > 0)
+      if (scratch_write_size > 0)
       {
         scratch_start &= record_buffer_size_mask_;
         scratch_end &= record_buffer_size_mask_;
         if (scratch_start < scratch_end)
         {
-          vessl::array scratch(scratch_buffer_, block_size);
-          vessl::array block(record_buffer_.data() + scratch_start, block_size);
+          vessl::array scratch(scratch_buffer_, scratch_write_size);
+          vessl::array block(record_buffer_.data() + scratch_start, scratch_write_size);
           block.copy_to(scratch);
         }
         else
@@ -168,12 +185,15 @@ public:
           vessl::array scratch_a(scratch_buffer_, to_end);
           block_a.copy_to(scratch_a);
           
-          vessl::array block_b(record_buffer_.data(), block_size - to_end);
-          vessl::array scratch_b(scratch_buffer_ + to_end, block_size - to_end);
+          vessl::array block_b(record_buffer_.data(), scratch_write_size - to_end);
+          vessl::array scratch_b(scratch_buffer_ + to_end, scratch_write_size - to_end);
           block_b.copy_to(scratch_b);
         }
       
-        float scratch_pos = grain_pos - vessl::math::floor(grain_pos);
+        float scratch_pos = grain.dir > 0 
+          ? grain_pos - vessl::math::floor(grain_pos)
+          : static_cast<float>(scratch_write_size - 2) + (grain_pos - vessl::math::floor(grain_pos));
+        float scratch_step = grain.speed*grain.dir;
         bool grain_done = false;
         for (int i = 0; i < out.size() && !grain_done; i++)
         {
@@ -191,7 +211,7 @@ public:
             gro += samp;
           }
           
-          scratch_pos += grain.speed;
+          scratch_pos += scratch_step;
           grain.ramp += grain.ramp_step;
           
           grain_done = grain.ramp >= vessl::phase_360;
@@ -255,6 +275,7 @@ private:
     vessl::duration_p grain_rate;
     vessl::analog_p   grain_pan;
     vessl::analog_p   grain_volume;
+    vessl::binary_p   grain_reverse;
   } params_;
   
   struct Grain
@@ -267,7 +288,7 @@ private:
     float speed;
     float pan;
     float vol;
-    float padding;
+    float dir; // +1 forward, -1 backward
   };
 
   unsigned grain_rate_phasor_ = 0;

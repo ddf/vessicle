@@ -17,19 +17,19 @@ public:
   [[nodiscard]] const parameter_list& parameters() const override { return *this; }
   
   // length of a grain in seconds (duration_t)
-  [[nodiscard]] Parameter grain_duration() const { return params_.grain_duration("g.dur", 'd'); }
+  [[nodiscard]] Parameter duration() const { return params_.grain_duration("g.dur", 'd'); }
   // playback speed of grain, clamped to [-2,2]
-  [[nodiscard]] Parameter grain_speed() const { return params_.grain_speed("g.spd", 's'); }
+  [[nodiscard]] Parameter speed() const { return params_.grain_speed("g.spd", 's'); }
   // how far back in time the grain start should be moved (duration_t)
-  [[nodiscard]] Parameter grain_offset() const { return params_.grain_offset("g.off", 'o'); }
+  [[nodiscard]] Parameter offset() const { return params_.grain_offset("g.off", 'o'); }
   // how often grains are started (duration_t)
-  [[nodiscard]] Parameter grain_rate() const { return params_.grain_rate("g.rate", 'r'); }
+  [[nodiscard]] Parameter rate() const { return params_.grain_rate("g.rate", 'r'); }
   // how a grain is panned in the multi-channel field [-1,1]
-  [[nodiscard]] Parameter grain_pan() const { return params_.grain_pan("g.pan", 'p'); }
+  [[nodiscard]] Parameter pan() const { return params_.grain_pan("g.pan", 'p'); }
   // linear scale on amplitude of grain
-  [[nodiscard]] Parameter grain_volume() const { return params_.grain_volume("g.vol", 'v'); }
+  [[nodiscard]] Parameter volume() const { return params_.grain_volume("g.vol", 'v'); }
   // grains will play in reverse if true
-  [[nodiscard]] Parameter grain_reverse() const { return params_.grain_reverse("g.rev", 'f'); }
+  [[nodiscard]] Parameter reverse() const { return params_.grain_reverse("g.rev", 'f'); }
   
   GrainEnvelope envelope;
   
@@ -122,17 +122,7 @@ public:
         float gt  = grain.ramp*to_analog;
         float pos = grain.start + grain.size * gt;
         T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp)) * grain.vol;
-        // int i = static_cast<int>(pos);
-        // int j = i+1;
-        // float t = pos - i;
-        // RecordSampleType& si = buffer[i&record_buffer_size_mask_];
-        // RecordSampleType& sj = buffer[j&record_buffer_size_mask_];
-        // RecordSampleType grn = vessl::math::lerp(si, sj, t) * env;
-        // if (pos > record_buffer_size_mask_)
-        // {
-        //   pos -= (record_buffer_size_mask_ + 1);
-        // }
-        RecordSampleType grn = vessl::sample::read_interpolated<InterpType>(buffer, pos) * env;
+        RecordSampleType grn = vessl::sample::readf<InterpType>(buffer, pos) * env;
         vessl::sample::spatialize(grn.value(), grain.pan, &samp);
         accum += samp;
       }
@@ -199,7 +189,7 @@ public:
           if (grain.ramp >= 0)
           {
             T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp)) * grain.vol;
-            RecordSampleType grn = vessl::sample::read_interpolated<InterpType>(scratch_buffer_, scratch_pos) * env;
+            RecordSampleType grn = vessl::sample::readf<InterpType>(scratch_buffer_, scratch_pos) * env;
             vessl::sample::spatialize(grn.value(), grain.pan, &samp);
             gro += samp;
           }
@@ -242,12 +232,13 @@ protected:
   {
     switch (index)
     {
-      case 0: return grain_duration();
-      case 1: return grain_speed();
-      case 2: return grain_offset();
-      case 3: return grain_rate();
-      case 4: return grain_pan();
-      case 5: return grain_volume();
+      case 0: return duration();
+      case 1: return speed();
+      case 2: return offset();
+      case 3: return rate();
+      case 4: return pan();
+      case 5: return volume();
+      case 6: return reverse();
       default: return Parameter::none();
     }
   }
@@ -256,7 +247,6 @@ private:
   Granulator(RecordSampleType* buffer, size_t buffer_size)
     : record_buffer_a_(buffer, buffer_size)
     , record_buffer_b_(buffer + buffer_size, buffer_size)
-    , record_buffer_size_mask_(buffer_size - 1)
     , scratch_buffer_(nullptr)
   {
 
@@ -286,18 +276,17 @@ private:
     float dir; // +1 forward, -1 backward
   };
 
-  unsigned grain_rate_phasor_ = 0;
-  unsigned active_grain_count_ = 0;
-  unsigned grain_triggered_ = 0;
   Grain grains_[MaxGrains];
   
   // we allocate twice as much buffer as we need and split it between two delay lines.
   // this allows us to always block copy a contiguous block of sample data
   // and also allows us to use vessl::sample::read_interpolated with our buffer data
   // without needing to do anything special with reads between the end and beginning of the buffer.
+  RecordSampleType* scratch_buffer_;
   vessl::sample::delay_line<RecordSampleType> record_buffer_a_;
   vessl::sample::delay_line<RecordSampleType> record_buffer_b_;
-  vessl::size_t record_buffer_size_mask_;
   
-  RecordSampleType* scratch_buffer_;
+  unsigned grain_rate_phasor_ = 0;
+  unsigned active_grain_count_ = 0;
+  unsigned grain_triggered_ = 0;
 };

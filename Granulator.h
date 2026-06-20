@@ -5,7 +5,7 @@
 template<typename T, unsigned ChannelCount, unsigned MaxGrains>
 class Granulator : public vessl::unit_processor<vessl::sample::frame<T, ChannelCount>>
                  , public vessl::generator<vessl::sample::frame<T, ChannelCount>>
-                 , protected vessl::plist<7>
+                 , protected vessl::plist<8>
 {
 public:
   using Parameter = vessl::parameter;
@@ -30,13 +30,16 @@ public:
   [[nodiscard]] Parameter volume() const { return params_.grain_volume("g.vol", 'v'); }
   // grains will play in reverse if true
   [[nodiscard]] Parameter reverse() const { return params_.grain_reverse("g.rev", 'f'); }
+  // the maximum number of grains that can be simultaneously active.
+  [[nodiscard]] Parameter max_active() const { return params_.max_grains("g.max", 'm'); }
   
   GrainEnvelope envelope;
   
   // starts a new grain
   VESSL_INLINE void trigger(float sample_delay = 0)
   {
-    if (active_grain_count_ < MaxGrains)
+    unsigned max_active = vessl::math::min(params_.max_grains.value, MaxGrains);
+    if (active_grain_count_ < max_active)
     {
       Grain& grain = grains_[active_grain_count_++];
       grain.speed = vessl::math::constrain(params_.grain_speed.value, 0.5f, 2.f);
@@ -255,6 +258,8 @@ protected:
       case 4: return pan();
       case 5: return volume();
       case 6: return reverse();
+      case 7: return max_active();
+      
       default: return Parameter::none();
     }
   }
@@ -277,6 +282,7 @@ private:
     vessl::analog_p   grain_pan;
     vessl::analog_p   grain_volume;
     vessl::binary_p   grain_reverse;
+    vessl::param<unsigned> max_grains;
   } params_;
   
   struct Grain

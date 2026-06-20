@@ -100,6 +100,22 @@ public:
     generate(out);
   }
   
+  VESSL_INLINE void overdub(const vessl::array<SampleType>& in, float crossfade,  size_t sample_delay = 0)
+  {
+    size_t write_offset = sample_delay 
+                        + record_buffer_a_.size()
+                        - params_.grain_offset.value.samples
+                        - params_.grain_duration.value.samples;
+    auto rin = in.make_reader();
+    while (rin)
+    {
+      RecordSampleType rs = rin.read().to_mono();
+      record_buffer_a_.overdub(rs, crossfade, write_offset);
+      record_buffer_b_.overdub(rs, crossfade, write_offset);
+      ++write_offset;
+    }
+  }
+  
   [[nodiscard]] VESSL_INLINE SampleType generate() override
   {
     grain_rate_phasor_++;

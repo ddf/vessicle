@@ -44,22 +44,22 @@ public:
       Grain& grain = grains_[active_grain_count_++];
       grain.speed = vessl::math::constrain(params_.grain_speed.value, 0.5f, 2.f);
       grain.dir = params_.grain_reverse.value ? -1.f : 1.f;
-      // start is always relative to the end of buffer_a (i.e. the beginning of buffer_b)
-      // so that no matter the grain size or offset, we will always read from a valid portion
-      // of the double-sized buffer shared by the two delay lines.
+      // start is always relative to the end of the buffer
+      // so that no matter the grain size or offset,
+      // we will always read with a positive index.
       if (params_.grain_reverse.value)
       {
         // start at the end of the grain and play in reverse
         grain.size = params_.grain_duration.value.samples * grain.speed * -1.f;
-        grain.start = record_buffer_a_.size() 
-                    + record_buffer_a_.get_write_index()
+        grain.start = record_buffer_.size() 
+                    + record_buffer_.get_write_index()
                     - params_.grain_offset.value.samples;
       }
       else
       {
         grain.size = params_.grain_duration.value.samples * grain.speed;
-        grain.start = record_buffer_a_.size() 
-                    + record_buffer_a_.get_write_index()
+        grain.start = record_buffer_.size() 
+                    + record_buffer_.get_write_index()
                     - grain.size 
                     - params_.grain_offset.value.samples;
       }
@@ -73,15 +73,14 @@ public:
   }
     
   // should only be called immediately after process/generate
-  [[nodiscard]] bool started_grain() const { return grain_triggered_; }
+  [[nodiscard]] VESSL_INLINE bool started_grain() const { return grain_triggered_; }
   
-  [[nodiscard]] int active_grain_count() const { return active_grain_count_; }
+  [[nodiscard]] VESSL_INLINE int active_grain_count() const { return active_grain_count_; }
 
   [[nodiscard]] VESSL_INLINE SampleType process(const SampleType &in) override
   {
     RecordSampleType rin = in.to_mono();
-    record_buffer_a_.write(rin);
-    record_buffer_b_.write(rin);
+    record_buffer_.write(rin);
     return generate();
   }
   
@@ -93,26 +92,23 @@ public:
     {
       SampleType s = rin.read();
       RecordSampleType rs = s.to_mono();
-      record_buffer_a_.write(rs);
-      record_buffer_b_.write(rs);
+      record_buffer_.write(rs);
       //wout << generate();
     }
     
     generate(out);
   }
   
-  VESSL_INLINE void overdub(const vessl::array<SampleType>& in, float crossfade,  size_t sample_delay = 0)
+  VESSL_INLINE void overdub(vessl::source<SampleType>& in, vessl::analog_t scale, size_t sample_delay = 0)
   {
     size_t write_offset = sample_delay 
-                        + record_buffer_a_.size()
+                        + record_buffer_.size()
                         - params_.grain_offset.value.samples
                         - params_.grain_duration.value.samples;
-    auto rin = in.make_reader();
-    while (rin)
+    while (!in.is_empty())
     {
-      RecordSampleType rs = rin.read().to_mono();
-      record_buffer_a_.overdub(rs, crossfade, write_offset);
-      record_buffer_b_.overdub(rs, crossfade, write_offset);
+      RecordSampleType rs = in.read().to_mono() * scale;
+      RecordSampleType od = record_buffer_.overdub(rs, write_offset);
       ++write_offset;
     }
   }
@@ -130,7 +126,7 @@ public:
     
     SampleType accum = SampleType(0);
     SampleType samp;
-    RecordSampleType* buffer = record_buffer_a_.data();
+    RecordSampleType* buffer = record_buffer_.data();
     constexpr vessl::analog_t to_analog = 1.0f / vessl::phase_360;
     for (int i = active_grain_count_ - 1; i >= 0; i--)
     {
@@ -178,6 +174,7 @@ public:
     
     SampleType samp;
     constexpr vessl::analog_t to_analog = 1.0f / static_cast<float>(vessl::phase_360);
+    RecordSampleType* buffer = record_buffer_.data();
     for (int g = active_grain_count_ - 1; g >= 0; g--)
     {
       Grain& grain = grains_[g];
@@ -191,12 +188,25 @@ public:
 
       if (scratch_write_size > 0)
       {
-        // because we double buffer the record buffer 
-        // and set grain.start relative to the middle of that buffer,
-        // we can always read a continguous block!
-        vessl::array scratch(scratch_buffer_, scratch_write_size);
-        vessl::array block(record_buffer_a_.data() + scratch_start, scratch_write_size);
-        block.copy_to(scratch);
+        scratch_start &= record_buffer_size_mask_;
+        scratch_end &= record_buffer_size_mask_;
+        
+        if (scratch_start < scratch_end)
+        {
+          vessl::array scratch(scratch_buffer_, scratch_write_size);
+          vessl::array block(buffer + scratch_start, scratch_write_size);
+          block.copy_to(scratch);
+        }
+        else
+        {
+          vessl::size_t block_a_size = record_buffer_size_mask_ + 1 - scratch_start;
+          vessl::array block_a(buffer + scratch_start, block_a_size);
+          vessl::array scratch_a(scratch_buffer_, block_a_size);
+          vessl::array block_b(buffer, scratch_write_size - block_a_size);
+          vessl::array scratch_b(scratch_buffer_ + block_a_size, scratch_write_size - block_a_size);
+          block_a.copy_to(scratch_a);
+          block_b.copy_to(scratch_b);
+        }
       
         float scratch_pos = grain.dir > 0 
           ? grain_pos - vessl::math::floor(grain_pos)
@@ -233,7 +243,7 @@ public:
   static Granulator* create(vessl::size_t buffer_size, vessl::size_t block_size)
   {
     RecordSampleType* scratch = new RecordSampleType[block_size*2];
-    RecordSampleType* buffer = new RecordSampleType[buffer_size*2];
+    RecordSampleType* buffer = new RecordSampleType[buffer_size];
     Granulator* granulator = new Granulator(buffer, buffer_size);
     granulator->scratch_buffer_ = scratch;
     return granulator;
@@ -242,8 +252,7 @@ public:
   static void destroy(Granulator* granulator)
   {
     delete[] granulator->scratch_buffer_;
-    delete[] granulator->record_buffer_a_.data();
-    // don't need to delete record buffer b data because a+b were allocated as a contiguous block.
+    delete[] granulator->record_buffer_.data();
     delete granulator;
   }
 
@@ -267,9 +276,9 @@ protected:
   
 private:
   Granulator(RecordSampleType* buffer, size_t buffer_size)
-    : record_buffer_a_(buffer, buffer_size)
-    , record_buffer_b_(buffer + buffer_size, buffer_size)
+    : record_buffer_(buffer, buffer_size)
     , scratch_buffer_(nullptr)
+    , record_buffer_size_mask_(buffer_size - 1)
   {
 
   }
@@ -301,14 +310,12 @@ private:
 
   Grain grains_[MaxGrains];
   
-  // we allocate twice as much buffer as we need and split it between two delay lines.
-  // this allows us to always block copy a contiguous block of sample data
-  // and also allows us to use vessl::sample::read_interpolated with our buffer data
-  // without needing to do anything special with reads between the end and beginning of the buffer.
+  vessl::sample::delay_line<RecordSampleType> record_buffer_;
+  // to improve performance, we block copy audio from the record buffer 
+  // to a smaller scratch buffer before generating each active grain.
   RecordSampleType* scratch_buffer_;
-  vessl::sample::delay_line<RecordSampleType> record_buffer_a_;
-  vessl::sample::delay_line<RecordSampleType> record_buffer_b_;
   
+  unsigned record_buffer_size_mask_;
   unsigned grain_rate_phasor_ = 0;
   unsigned active_grain_count_ = 0;
   unsigned grain_triggered_ = 0;

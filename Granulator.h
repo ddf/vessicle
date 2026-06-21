@@ -79,7 +79,6 @@ public:
 
   [[nodiscard]] VESSL_INLINE SampleType process(const SampleType &in) override
   {
-    grain_triggered_ = false;
     RecordSampleType rin = in.to_mono();
     record_buffer_a_.write(rin);
     record_buffer_b_.write(rin);
@@ -88,7 +87,6 @@ public:
   
   VESSL_INLINE void process(const vessl::array<SampleType>& in, vessl::array<SampleType> out)
   {
-    grain_triggered_ = false;
     auto rin = in.make_reader();
     //auto wout = out.make_writer();
     while (rin)
@@ -121,6 +119,7 @@ public:
   
   [[nodiscard]] VESSL_INLINE SampleType generate() override
   {
+    grain_triggered_ = false;
     grain_rate_phasor_++;
     
     if (grain_rate_phasor_ >= params_.grain_rate.value.samples)
@@ -160,6 +159,8 @@ public:
   
   VESSL_INLINE void generate(vessl::array<SampleType> out)
   {
+    grain_triggered_ = false;
+    
     if (const float grain_spacing = params_.grain_rate.value.samples; grain_spacing > 0)
     {
       float trigger_delay = grain_spacing - grain_rate_phasor_;

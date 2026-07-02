@@ -137,7 +137,7 @@ public:
   {
     vessl::size_t size = input.size();
     clockable::tick(size);
-
+    
     float smoothFreeze = repeats();
     for (freezeSettingsIdx = 0; freezeSettingsIdx < FREEZE_SETTINGS_COUNT - 1; freezeSettingsIdx++)
     {
@@ -150,7 +150,7 @@ public:
     
     float newFreezeLength = freezeSize(freezeSettingsIdx);
     float newReadSpeed = freezeSpeed(freezeSettingsIdx);
-
+    
     // smooth size and speed changes when not clocked
     bool clocked = samplesSinceLastTap < FREEZE_BUFFER_SIZE;
     if (!clocked)
@@ -165,38 +165,41 @@ public:
         newReadSpeed = newReadSpeed + (freezeSpeed(freezeSettingsIdx + 1) - newReadSpeed)*t;
       }
     }
-
+    
     freezeProc.duration() = newFreezeLength;
     freezeProc.rate() = newReadSpeed;
     freezeProc.enabled() = freeze().read_binary();
-
+    
     float sr = sampleRate;
     float crushParam = crush();
     float bits = crushParam > 0.001f ? (16.f - crushParam*12.0f) : 24;
     float rate = crushParam > 0.001f ? sr * 0.25f + crushParam*(100 - sr * 0.25f) : sr;
     crushProc.depth() = bits;
     crushProc.rate() = rate;
-
+    
     auto inputReader = input.make_reader();
+    auto procw = processBuffer.make_writer();
     auto iew = inputEnvelope.make_writer();
     while(inputReader)
     {
-      iew << inputReader.read().to_mono().value();
+      GlitchSampleType sample = inputReader.read();
+      procw << sample;
+      iew << sample.to_mono().value();
     }
     envelopeFollower.process(inputEnvelope, inputEnvelope);
-
-    // can't use output as a process buffer because we need the dry input again for the shape stage.
+    
+    //can't use output as a process buffer because we need the dry input again for the shape stage.
     if (clocked)
     {
-      freezeProc.process<vessl::time::mode::fade>(input, processBuffer);
+      freezeProc.process<vessl::time::mode::fade>(processBuffer, processBuffer);
     }
     else
     {
-      freezeProc.process<vessl::time::mode::slew>(input, processBuffer);
+      freezeProc.process<vessl::time::mode::slew>(processBuffer, processBuffer);
     }
     
     crushProc.process(processBuffer, processBuffer);
-
+    
     float glitchParam = glitch();
     glitchSettingsIdx = static_cast<int>(glitchParam * GLITCH_SETTINGS_COUNT);
     float glitchSpeed = 1.0f / glitchSize(glitchSettingsIdx);
@@ -208,7 +211,7 @@ public:
         glitchRand = vessl::math::random::range<float>(0.f, 1.f);
         params.glitchEnabled.value = glitchRand < glitchProb;
       }
-
+    
       if (params.glitchEnabled.value)
       {
         vessl::size_t d = i+1;
@@ -218,7 +221,7 @@ public:
         pf.right() = glitch(pf.right(), f.right());
       }
     }
-
+    
     float shapeParam = shape();
     float shapeWet = shapeParam;
     float shapeDry = 1.0f - shapeWet;
@@ -235,7 +238,7 @@ public:
       const float readR = shapeDry*dryIdx + shapeWet*vessl::math::constrain(shapeScale*in.right(), -fSize, fSize);
       output[i] = GlitchSampleType(interpolatedReadAt(processBuffer, readL).left(), interpolatedReadAt(processBuffer, readR).right());
     }
-
+    
     if (samplesSinceLastTap < FREEZE_BUFFER_SIZE)
     {
       samplesSinceLastTap += size;

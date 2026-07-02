@@ -50,6 +50,8 @@ static constexpr GlitchSettings GLITCH_SETTINGS[] = {
 };
 static constexpr count_t GLITCH_SETTINGS_COUNT = sizeof(GLITCH_SETTINGS) / sizeof(GlitchSettings);
 
+static constexpr count_t GLITCH_LFO_DIV = 4;
+
 using GlitchSampleType = vessl::sample::type<float>::stereo;
 using BufferType = vessl::array<GlitchSampleType>;
 using BitCrush = vessl::processors::bitcrush<GlitchSampleType, 24>;
@@ -123,15 +125,15 @@ public:
 
   using clockable::clock;
 
-  parameter repeats() const { return params.repeats("repeats", 'r');  }
-  parameter crush() const { return params.crush("crush", 'c'); }
-  parameter glitch() const { return params.glitch("glitch", 'g'); }
-  parameter glitching() const { return params.glitchEnabled("glich enabled", 'e'); }
-  parameter shape() const { return params.shape("shape", 's'); }
-  parameter freeze() const { return params.freeze("freeze", 'f'); }
-  float freezePhase() const { return freezeProc.phase(); }
-  float envelope() const { return inputEnvelope[0]; }
-  float rand() const { return glitchRand; }
+  [[nodiscard]] parameter repeats() const { return params.repeats("repeats", 'r');  }
+  [[nodiscard]] parameter crush() const { return params.crush("crush", 'c'); }
+  [[nodiscard]] parameter glitch() const { return params.glitch("glitch", 'g'); }
+  [[nodiscard]] parameter glitching() const { return params.glitchEnabled("glich enabled", 'e'); }
+  [[nodiscard]] parameter shape() const { return params.shape("shape", 's'); }
+  [[nodiscard]] parameter freeze() const { return params.freeze("freeze", 'f'); }
+  [[nodiscard]] float freeze_phase() const { return freezeProc.phase(); }
+  [[nodiscard]] float envelope() const { return inputEnvelope[0]; }
+  [[nodiscard]] float glitch_rand() const { return glitchRand; }
 
   void process(vessl::array<GlitchSampleType> input, vessl::array<GlitchSampleType> output) override
   {
@@ -148,8 +150,8 @@ public:
       }
     }
     
-    float newFreezeLength = freezeSize(freezeSettingsIdx);
-    float newReadSpeed = freezeSpeed(freezeSettingsIdx);
+    float newFreezeLength = freeze_size(freezeSettingsIdx);
+    float newReadSpeed = freeze_speed(freezeSettingsIdx);
     
     // smooth size and speed changes when not clocked
     bool clocked = samplesSinceLastTap < FREEZE_BUFFER_SIZE;
@@ -160,9 +162,9 @@ public:
         float p0 = FREEZE_SETTINGS[freezeSettingsIdx].paramThresh;
         float p1 = FREEZE_SETTINGS[freezeSettingsIdx+1].paramThresh;
         float t = (smoothFreeze - p0) / (p1 - p0);
-        float d1 = freezeSize(freezeSettingsIdx + 1);
+        float d1 = freeze_size(freezeSettingsIdx + 1);
         newFreezeLength = newFreezeLength + (d1 - newFreezeLength)*t;
-        newReadSpeed = newReadSpeed + (freezeSpeed(freezeSettingsIdx + 1) - newReadSpeed)*t;
+        newReadSpeed = newReadSpeed + (freeze_speed(freezeSettingsIdx + 1) - newReadSpeed)*t;
       }
     }
     
@@ -189,7 +191,7 @@ public:
     envelopeFollower.process(inputEnvelope, inputEnvelope);
     
     //can't use output as a process buffer because we need the dry input again for the shape stage.
-    if (clocked)
+    if (clocked)  // NOLINT(bugprone-branch-clone)
     {
       freezeProc.process<vessl::time::mode::fade>(processBuffer, processBuffer);
     }
@@ -200,16 +202,24 @@ public:
     
     crushProc.process(processBuffer, processBuffer);
     
-    float glitchParam = glitch();
-    glitchSettingsIdx = static_cast<int>(glitchParam * GLITCH_SETTINGS_COUNT);
-    float glitchSpeed = 1.0f / glitchSize(glitchSettingsIdx);
-    float glitchProb = glitchParam < 0.0001f ? 0 : 0.1f + 0.9f*glitchParam;
+    float glitch_param = glitch();
+    glitchSettingsIdx = static_cast<int>((1.f - glitch_param) * GLITCH_SETTINGS_COUNT);
+    float glitch_speed = 1.0f / (glitch_size(glitchSettingsIdx) * GLITCH_LFO_DIV);
+    float glitch_prob = glitch_param < 0.001f ? 0 : 0.1f + 0.4f*glitch_param;
+    if (glitch_prob == 0)
+    {
+      params.glitchEnabled.value = false;
+    }
     for (count_t i = 0; i < size; ++i)
     {
-      if (stepGlitchLfo(glitchSpeed))
+      if (step_glitch_lfo(glitch_speed))
       {
         glitchRand = vessl::math::random::range<float>(0.f, 1.f);
-        params.glitchEnabled.value = glitchRand < glitchProb;
+        if (glitchRand < glitch_prob)
+        {
+          params.glitchEnabled.value = !params.glitchEnabled.value;
+        }
+        //params.glitchEnabled.value = glitchRand < glitch_prob;
       }
     
       if (params.glitchEnabled.value)
@@ -246,7 +256,7 @@ public:
   }
 
 protected:
-  parameter element_at(vessl::size_t index) const override
+  [[nodiscard]] parameter element_at(vessl::size_t index) const override
   {
     parameter p[num] = { repeats(), crush(), glitch(), glitching(), shape(), freeze() };
     return p[index];
@@ -263,23 +273,17 @@ protected:
       freezeCounter = 0;
     }
 
-    // we use one instead of zero because our logic in process
-    // is checking for the flip from 1 to 0 to generate a new random value.
-    if (++glitchCounter >= GLITCH_SETTINGS[glitchSettingsIdx].lfoResetCount)
+    // // we use one instead of zero because our logic in process
+    // // is checking for the flip from 1 to 0 to generate a new random value.
+    if (++glitchCounter >= GLITCH_SETTINGS[glitchSettingsIdx].lfoResetCount*GLITCH_LFO_DIV)
     {
       glitchLfo = 1;
       glitchCounter = 0;
     }
-
-    // decided to remove this because it makes it impossible to get clean repeats, even with crush turned all the way down.
-    // may revisit the idea later - might be interesting to do this as something that can blend in.
-    // const bool mangle = freezeEnabled && on;
-    // crushL->setMangle(mangle);
-    // crushR->setMangle(mangle);
   }
 
 private:
-  bool stepGlitchLfo(const float speed)
+  VESSL_INLINE bool step_glitch_lfo(const float speed)
   {
     glitchLfo = glitchLfo + speed;
     if (glitchLfo >= 1)
@@ -295,28 +299,28 @@ private:
     return false;
   }
 
-  float freezeSize(const count_t idx) const
+  [[nodiscard]] VESSL_INLINE float freeze_size(const count_t idx) const
   {
     return period() * FREEZE_SETTINGS[idx].clockRatio;
   }
 
-  static float freezeSpeed(const count_t idx)
+  VESSL_INLINE static float freeze_speed(const count_t idx)
   {
     return FREEZE_SETTINGS[idx].playbackSpeed;
   }
 
-  float glitchSize(const count_t idx) const
+  [[nodiscard]] VESSL_INLINE float glitch_size(const count_t idx) const
   {
     return period() * GLITCH_SETTINGS[idx].clockRatio;
   }
 
-  static float glitch(const float a, const float b)
+  VESSL_INLINE static float glitch(const float a, const float b)
   {
-    const int glitched = static_cast<int>(a*24) ^ static_cast<int>(b*24);
-    return static_cast<float>(glitched) / 24;
+    vessl::q31_t glitched = vessl::cast<vessl::q31_t>(a) ^ vessl::cast<vessl::q31_t>(b);
+    return vessl::cast<float>(glitched);
   }
   
-  static GlitchSampleType interpolatedReadAt(vessl::array<GlitchSampleType> buffer, float index)
+  VESSL_INLINE static GlitchSampleType interpolatedReadAt(vessl::array<GlitchSampleType> buffer, float index)
   {
     // index can be negative, we ensure it is positive.
     index += static_cast<float>(buffer.size());

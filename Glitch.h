@@ -75,7 +75,7 @@ private:
     vessl::analog_p shape;
     vessl::analog_p play_rate;
     vessl::binary_p freeze;
-    vessl::binary_p glitchEnabled;
+    vessl::binary_p glitch_enabled;
   } params_;
   BufferType freeze_buffer_;
   Freeze freeze_proc_;
@@ -89,6 +89,7 @@ private:
   count_t freeze_counter_;
   count_t glitch_counter_;
   count_t samples_since_last_tap_;
+  uint8_t glitch_active_;
   
   BitCrush crush_proc_;
   
@@ -111,6 +112,7 @@ public:
   , glitch_settings_idx_(0)
   , freeze_counter_(0), glitch_counter_(0)
   , samples_since_last_tap_(FREEZE_BUFFER_SIZE)
+  , glitch_active_(0)
   , crush_proc_(sample_rate, sample_rate)
   , process_buffer_(new GlitchSampleType[block_size], block_size)
   , follower_window_(new float[block_size * 8], block_size * 8) // NOLINT(bugprone-implicit-widening-of-multiplication-result)
@@ -132,13 +134,14 @@ public:
   [[nodiscard]] parameter repeats() const { return params_.repeats("repeats", 'r');  }
   [[nodiscard]] parameter crush() const { return params_.crush("crush", 'c'); }
   [[nodiscard]] parameter glitch() const { return params_.glitch("glitch", 'g'); }
-  [[nodiscard]] parameter glitching() const { return params_.glitchEnabled("glich enabled", 'e'); }
+  [[nodiscard]] parameter glitch_enabled() const { return params_.glitch_enabled("glich enabled", 'e'); }
   [[nodiscard]] parameter shape() const { return params_.shape("shape", 's'); }
   [[nodiscard]] parameter freeze() const { return params_.freeze("freeze", 'f'); }
   [[nodiscard]] parameter play_rate() const { return params_.play_rate("play rate", 'p'); }
   [[nodiscard]] float freeze_phase() const { return freeze_proc_.phase(); }
   [[nodiscard]] float envelope() const { return input_envelope_[0]; }
   [[nodiscard]] float glitch_rand() const { return glitch_rand_; }
+  [[nodiscard]] bool  is_glitching() const { return glitch_active_; }
 
   void process(vessl::array<GlitchSampleType> input, vessl::array<GlitchSampleType> output) override
   {
@@ -210,11 +213,12 @@ public:
     float glitch_param = glitch();
     glitch_settings_idx_ = static_cast<int>((1.f - glitch_param) * GLITCH_SETTINGS_COUNT);
     float glitch_speed = 1.0f / (glitch_size(glitch_settings_idx_) * GLITCH_LFO_DIV);
-    float glitch_prob = glitch_param < 0.001f ? 0 : 0.1f + 0.4f*glitch_param;
+    float glitch_prob = params_.glitch_enabled.value ? 0.1f + 0.4f*glitch_param : 0.f;
     if (glitch_prob == 0)
     {
-      params_.glitchEnabled.value = false;
+      glitch_active_ = false;
     }
+    
     for (count_t i = 0; i < size; ++i)
     {
       if (step_glitch_lfo(glitch_speed))
@@ -222,12 +226,11 @@ public:
         glitch_rand_ = vessl::math::random::range<float>(0.f, 1.f);
         if (glitch_rand_ < glitch_prob)
         {
-          params_.glitchEnabled.value = !params_.glitchEnabled.value;
+          glitch_active_ = !glitch_active_;
         }
-        //params.glitchEnabled.value = glitchRand < glitch_prob;
       }
     
-      if (params_.glitchEnabled.value)
+      if (glitch_active_)
       {
         vessl::size_t d = i+1;
         GlitchSampleType f = freeze_proc_.buffer().read(d);
@@ -263,7 +266,7 @@ public:
 protected:
   [[nodiscard]] parameter element_at(vessl::size_t index) const override
   {
-    parameter p[num] = { repeats(), crush(), glitch(), glitching(), shape(), freeze(), play_rate() };
+    parameter p[num] = { repeats(), crush(), glitch(), glitch_enabled(), shape(), freeze(), play_rate() };
     return p[index];
   }
   

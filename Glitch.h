@@ -8,8 +8,6 @@ struct FreezeSettings
 {
   // used to determine how long the frozen section of audio should be.
   float clockRatio;
-  // these are the speeds at which the frozen audio should be played back.
-  float playbackSpeed;
   // how many clock ticks should occur before resetting the read LFO when not frozen,
   // in order to keep it in sync with the clock.
   count_t readResetCount;
@@ -18,15 +16,15 @@ struct FreezeSettings
 };
 
 static const FreezeSettings FREEZE_SETTINGS[] = {
-  { 2.0f,     4.0f, 1, 0.0f  },
-  { 2.0f,     3.0f, 2, 0.02f },
-  { 2.0f,     2.0f, 1, 0.06f },
-  { 4.0f/3.0f,1.0f, 4, 0.20f },
-  { 2.0f,     1.0f, 2, 0.4f  },
-  { 3.0f,     1.0f, 3, 0.6f  },
-  { 4.0f,     1.0f, 4, 0.7f  },
-  { 6.0f,     1.0f, 6, 0.85f },
-  { 8.0f,     1.0f, 8, 0.95f },
+  { 0.25f, 1, 0.0f  },
+  { 0.5f,  1, 0.02f },
+  { 1.0f,  1, 0.06f },
+  { 1.5f,  3, 0.20f },
+  { 2.0f,  2, 0.4f  },
+  { 3.0f,  3, 0.6f  },
+  { 4.0f,  4, 0.7f  },
+  { 6.0f,  6, 0.85f },
+  { 8.0f,  8, 0.95f },
 };
 static constexpr count_t FREEZE_SETTINGS_COUNT = sizeof(FREEZE_SETTINGS) / sizeof(FreezeSettings);
 
@@ -62,7 +60,7 @@ using Array = vessl::array<float>;
 template<uint32_t FREEZE_BUFFER_SIZE>
 class Glitch : public vessl::unit_processor<GlitchSampleType>
              , public vessl::time::clockable
-             , protected vessl::plist<6>
+             , protected vessl::plist<7>
 {
 public:
   using parameter = vessl::parameter;
@@ -75,225 +73,232 @@ private:
     vessl::analog_p crush;
     vessl::analog_p glitch;
     vessl::analog_p shape;
+    vessl::analog_p play_rate;
     vessl::binary_p freeze;
     vessl::binary_p glitchEnabled;
-  } params;
-  BufferType freezeBuffer;
-  Freeze freezeProc;
+  } params_;
+  BufferType freeze_buffer_;
+  Freeze freeze_proc_;
     
-  float sampleRate;
-  float glitchLfo;
-  float glitchRand;
-  count_t freezeSettingsIdx;
-  count_t glitchSettingsIdx;
-  count_t freezeCounter;
-  count_t glitchCounter;
-  count_t samplesSinceLastTap;
+  float sample_rate_;
+  float glitch_lfo_;
+  float glitch_rand_;
+  float freeze_rate_;
+  count_t freeze_settings_idx_;
+  count_t glitch_settings_idx_;
+  count_t freeze_counter_;
+  count_t glitch_counter_;
+  count_t samples_since_last_tap_;
   
-  BitCrush crushProc;
+  BitCrush crush_proc_;
   
-  BufferType processBuffer;
+  BufferType process_buffer_;
 
-  Array followerWindow;
-  EnvelopeFollower envelopeFollower;
-  Array inputEnvelope;
+  Array follower_window_;
+  EnvelopeFollower envelope_follower_;
+  Array input_envelope_;
   
 public:
-  Glitch(float sampleRate, vessl::size_t blockSize) 
-  : clockable(sampleRate, static_cast<uint32_t>(blockSize), FREEZE_BUFFER_SIZE)
-  , freezeBuffer(new GlitchSampleType[FREEZE_BUFFER_SIZE], FREEZE_BUFFER_SIZE)
-  , freezeProc(freezeBuffer, sampleRate)
-  , sampleRate(sampleRate)
-  , glitchLfo(0), glitchRand(0), freezeSettingsIdx(0), glitchSettingsIdx(0)
-  , freezeCounter(0), glitchCounter(0)
-  , samplesSinceLastTap(FREEZE_BUFFER_SIZE)
-  , crushProc(sampleRate, sampleRate)
-  , processBuffer(new GlitchSampleType[blockSize], blockSize)
-  , followerWindow(new float[blockSize*8], blockSize*8)  // NOLINT(bugprone-implicit-widening-of-multiplication-result)
-  , envelopeFollower(followerWindow, sampleRate, 0.001f)
-  , inputEnvelope(new float[blockSize], blockSize)
+  Glitch(float sample_rate, vessl::size_t block_size)
+  : clockable(sample_rate, static_cast<uint32_t>(block_size), FREEZE_BUFFER_SIZE)
+  , freeze_buffer_(new GlitchSampleType[FREEZE_BUFFER_SIZE], FREEZE_BUFFER_SIZE)
+  , freeze_proc_(freeze_buffer_, sample_rate)
+  , sample_rate_(sample_rate)
+  , glitch_lfo_(0)
+  , glitch_rand_(0)
+  , freeze_rate_(0)
+  , freeze_settings_idx_(0)
+  , glitch_settings_idx_(0)
+  , freeze_counter_(0), glitch_counter_(0)
+  , samples_since_last_tap_(FREEZE_BUFFER_SIZE)
+  , crush_proc_(sample_rate, sample_rate)
+  , process_buffer_(new GlitchSampleType[block_size], block_size)
+  , follower_window_(new float[block_size * 8], block_size * 8) // NOLINT(bugprone-implicit-widening-of-multiplication-result)
+  , envelope_follower_(follower_window_, sample_rate, 0.001f)
+  , input_envelope_(new float[block_size], block_size)
   {
   }
-  
+
   ~Glitch() override
   {
-    delete[] inputEnvelope.data();
-    delete[] followerWindow.data();
-    delete[] freezeBuffer.data();
-    delete[] processBuffer.data();
+    delete[] input_envelope_.data();
+    delete[] follower_window_.data();
+    delete[] freeze_buffer_.data();
+    delete[] process_buffer_.data();
   }
 
   using clockable::clock;
 
-  [[nodiscard]] parameter repeats() const { return params.repeats("repeats", 'r');  }
-  [[nodiscard]] parameter crush() const { return params.crush("crush", 'c'); }
-  [[nodiscard]] parameter glitch() const { return params.glitch("glitch", 'g'); }
-  [[nodiscard]] parameter glitching() const { return params.glitchEnabled("glich enabled", 'e'); }
-  [[nodiscard]] parameter shape() const { return params.shape("shape", 's'); }
-  [[nodiscard]] parameter freeze() const { return params.freeze("freeze", 'f'); }
-  [[nodiscard]] float freeze_phase() const { return freezeProc.phase(); }
-  [[nodiscard]] float envelope() const { return inputEnvelope[0]; }
-  [[nodiscard]] float glitch_rand() const { return glitchRand; }
+  [[nodiscard]] parameter repeats() const { return params_.repeats("repeats", 'r');  }
+  [[nodiscard]] parameter crush() const { return params_.crush("crush", 'c'); }
+  [[nodiscard]] parameter glitch() const { return params_.glitch("glitch", 'g'); }
+  [[nodiscard]] parameter glitching() const { return params_.glitchEnabled("glich enabled", 'e'); }
+  [[nodiscard]] parameter shape() const { return params_.shape("shape", 's'); }
+  [[nodiscard]] parameter freeze() const { return params_.freeze("freeze", 'f'); }
+  [[nodiscard]] parameter play_rate() const { return params_.play_rate("play rate", 'p'); }
+  [[nodiscard]] float freeze_phase() const { return freeze_proc_.phase(); }
+  [[nodiscard]] float envelope() const { return input_envelope_[0]; }
+  [[nodiscard]] float glitch_rand() const { return glitch_rand_; }
 
   void process(vessl::array<GlitchSampleType> input, vessl::array<GlitchSampleType> output) override
   {
     vessl::size_t size = input.size();
     clockable::tick(size);
     
-    float smoothFreeze = repeats();
-    for (freezeSettingsIdx = 0; freezeSettingsIdx < FREEZE_SETTINGS_COUNT - 1; freezeSettingsIdx++)
+    float smooth_freeze = repeats();
+    for (freeze_settings_idx_ = 0; freeze_settings_idx_ < FREEZE_SETTINGS_COUNT - 1; freeze_settings_idx_++)
     {
-      if (smoothFreeze >= FREEZE_SETTINGS[freezeSettingsIdx].paramThresh
-        && smoothFreeze < FREEZE_SETTINGS[freezeSettingsIdx+1].paramThresh)
+      if (smooth_freeze >= FREEZE_SETTINGS[freeze_settings_idx_].paramThresh
+        && smooth_freeze < FREEZE_SETTINGS[freeze_settings_idx_+1].paramThresh)
       {
         break;
       }
     }
     
-    float newFreezeLength = freeze_size(freezeSettingsIdx);
-    float newReadSpeed = freeze_speed(freezeSettingsIdx);
+    float new_freeze_length = freeze_size(freeze_settings_idx_);
+    //float newReadSpeed = freeze_speed(freeze_settings_idx_);
+    float new_read_speed = play_rate().read_analog();
     
     // smooth size and speed changes when not clocked
-    bool clocked = samplesSinceLastTap < FREEZE_BUFFER_SIZE;
+    bool clocked = samples_since_last_tap_ < FREEZE_BUFFER_SIZE;
     if (!clocked)
     {
-      if (freezeSettingsIdx < FREEZE_SETTINGS_COUNT - 1)
+      if (freeze_settings_idx_ < FREEZE_SETTINGS_COUNT - 1)
       {
-        float p0 = FREEZE_SETTINGS[freezeSettingsIdx].paramThresh;
-        float p1 = FREEZE_SETTINGS[freezeSettingsIdx+1].paramThresh;
-        float t = (smoothFreeze - p0) / (p1 - p0);
-        float d1 = freeze_size(freezeSettingsIdx + 1);
-        newFreezeLength = newFreezeLength + (d1 - newFreezeLength)*t;
-        newReadSpeed = newReadSpeed + (freeze_speed(freezeSettingsIdx + 1) - newReadSpeed)*t;
+        float p0 = FREEZE_SETTINGS[freeze_settings_idx_].paramThresh;
+        float p1 = FREEZE_SETTINGS[freeze_settings_idx_+1].paramThresh;
+        float t = (smooth_freeze - p0) / (p1 - p0);
+        float d1 = freeze_size(freeze_settings_idx_ + 1);
+        new_freeze_length = new_freeze_length + (d1 - new_freeze_length)*t;
       }
     }
     
-    freezeProc.duration() = newFreezeLength;
-    freezeProc.rate() = newReadSpeed;
-    freezeProc.enabled() = freeze().read_binary();
+    freeze_proc_.duration() = new_freeze_length;
+    freeze_proc_.rate() = new_read_speed;
+    freeze_proc_.enabled() = freeze().read_binary();
     
-    float sr = sampleRate;
-    float crushParam = crush();
-    float bits = crushParam > 0.001f ? (16.f - crushParam*12.0f) : 24;
-    float rate = crushParam > 0.001f ? sr * 0.25f + crushParam*(100 - sr * 0.25f) : sr;
-    crushProc.depth() = bits;
-    crushProc.rate() = rate;
+    float sr = sample_rate_;
+    float crush_param = crush();
+    float bits = crush_param > 0.001f ? (16.f - crush_param*12.0f) : 24;
+    float rate = crush_param > 0.001f ? sr * 0.25f + crush_param*(100 - sr * 0.25f) : sr;
+    crush_proc_.depth() = bits;
+    crush_proc_.rate() = rate;
     
-    auto inputReader = input.make_reader();
-    auto procw = processBuffer.make_writer();
-    auto iew = inputEnvelope.make_writer();
-    while(inputReader)
+    auto input_reader = input.make_reader();
+    auto procw = process_buffer_.make_writer();
+    auto iew = input_envelope_.make_writer();
+    while(input_reader)
     {
-      GlitchSampleType sample = inputReader.read();
+      GlitchSampleType sample = input_reader.read();
       procw << sample;
       iew << sample.to_mono().value();
     }
-    envelopeFollower.process(inputEnvelope, inputEnvelope);
+    envelope_follower_.process(input_envelope_, input_envelope_);
     
     //can't use output as a process buffer because we need the dry input again for the shape stage.
     if (clocked)  // NOLINT(bugprone-branch-clone)
     {
-      freezeProc.process<vessl::time::mode::fade>(processBuffer, processBuffer);
+      freeze_proc_.process<vessl::time::mode::fade>(process_buffer_, process_buffer_);
     }
     else
     {
-      freezeProc.process<vessl::time::mode::slew>(processBuffer, processBuffer);
+      freeze_proc_.process<vessl::time::mode::slew>(process_buffer_, process_buffer_);
     }
     
-    crushProc.process(processBuffer, processBuffer);
+    crush_proc_.process(process_buffer_, process_buffer_);
     
     float glitch_param = glitch();
-    glitchSettingsIdx = static_cast<int>((1.f - glitch_param) * GLITCH_SETTINGS_COUNT);
-    float glitch_speed = 1.0f / (glitch_size(glitchSettingsIdx) * GLITCH_LFO_DIV);
+    glitch_settings_idx_ = static_cast<int>((1.f - glitch_param) * GLITCH_SETTINGS_COUNT);
+    float glitch_speed = 1.0f / (glitch_size(glitch_settings_idx_) * GLITCH_LFO_DIV);
     float glitch_prob = glitch_param < 0.001f ? 0 : 0.1f + 0.4f*glitch_param;
     if (glitch_prob == 0)
     {
-      params.glitchEnabled.value = false;
+      params_.glitchEnabled.value = false;
     }
     for (count_t i = 0; i < size; ++i)
     {
       if (step_glitch_lfo(glitch_speed))
       {
-        glitchRand = vessl::math::random::range<float>(0.f, 1.f);
-        if (glitchRand < glitch_prob)
+        glitch_rand_ = vessl::math::random::range<float>(0.f, 1.f);
+        if (glitch_rand_ < glitch_prob)
         {
-          params.glitchEnabled.value = !params.glitchEnabled.value;
+          params_.glitchEnabled.value = !params_.glitchEnabled.value;
         }
         //params.glitchEnabled.value = glitchRand < glitch_prob;
       }
     
-      if (params.glitchEnabled.value)
+      if (params_.glitchEnabled.value)
       {
         vessl::size_t d = i+1;
-        GlitchSampleType f = freezeProc.buffer().read(d);
-        GlitchSampleType& pf = processBuffer[i];
+        GlitchSampleType f = freeze_proc_.buffer().read(d);
+        GlitchSampleType& pf = process_buffer_[i];
         pf.left() = glitch(pf.left(), f.left());
         pf.right() = glitch(pf.right(), f.right());
       }
     }
     
-    float shapeParam = shape();
-    float shapeWet = shapeParam;
-    float shapeDry = 1.0f - shapeWet;
-    float fSize = static_cast<float>(size);
-    inputReader.reset();
+    float shape_param = shape();
+    float shape_wet = shape_param;
+    float shape_dry = 1.0f - shape_wet;
+    float size_f = static_cast<float>(size);
+    input_reader.reset();
     for (count_t i = 0; i < size; ++i)
     {
-      const float shapeScale = inputEnvelope[i]*fSize*(10.0f + 90.0f*shapeParam);
-      const float dryIdx = static_cast<float>(i);
+      const float shape_scale = input_envelope_[i]*size_f*(10.0f + 90.0f*shape_param);
+      const float dry_idx = static_cast<float>(i);
       // treat the process buffer like a wave table and use the dry input as phase, modulated by the envelope follower,
       // using shapeParam both for dry/wet mix and scaling of the envelope value.
-      GlitchSampleType in = inputReader.read();
-      const float readL = shapeDry*dryIdx + shapeWet*vessl::math::constrain(shapeScale*in.left(), -fSize, fSize);
-      const float readR = shapeDry*dryIdx + shapeWet*vessl::math::constrain(shapeScale*in.right(), -fSize, fSize);
-      output[i] = GlitchSampleType(interpolatedReadAt(processBuffer, readL).left(), interpolatedReadAt(processBuffer, readR).right());
+      GlitchSampleType in = input_reader.read();
+      const float read_l = shape_dry*dry_idx + shape_wet*vessl::math::constrain(shape_scale*in.left(), -size_f, size_f);
+      const float read_r = shape_dry*dry_idx + shape_wet*vessl::math::constrain(shape_scale*in.right(), -size_f, size_f);
+      output[i] = {interpolatedReadAt(process_buffer_, read_l).left(), interpolatedReadAt(process_buffer_, read_r).right()};
     }
     
-    if (samplesSinceLastTap < FREEZE_BUFFER_SIZE)
+    if (samples_since_last_tap_ < FREEZE_BUFFER_SIZE)
     {
-      samplesSinceLastTap += size;
+      samples_since_last_tap_ += size;
     }
   }
 
 protected:
   [[nodiscard]] parameter element_at(vessl::size_t index) const override
   {
-    parameter p[num] = { repeats(), crush(), glitch(), glitching(), shape(), freeze() };
+    parameter p[num] = { repeats(), crush(), glitch(), glitching(), shape(), freeze(), play_rate() };
     return p[index];
   }
   
   void tock(period_t sample_delay) override
   {
-    samplesSinceLastTap = 0;
+    samples_since_last_tap_ = 0;
       
     // reset readLfo based on the counter for our current setting
-    if (++freezeCounter >= FREEZE_SETTINGS[freezeSettingsIdx].readResetCount)
+    if (++freeze_counter_ >= FREEZE_SETTINGS[freeze_settings_idx_].readResetCount)
     {
-      freezeProc.reset();
-      freezeCounter = 0;
+      freeze_proc_.reset();
+      freeze_counter_ = 0;
     }
 
     // // we use one instead of zero because our logic in process
     // // is checking for the flip from 1 to 0 to generate a new random value.
-    if (++glitchCounter >= GLITCH_SETTINGS[glitchSettingsIdx].lfoResetCount*GLITCH_LFO_DIV)
+    if (++glitch_counter_ >= GLITCH_SETTINGS[glitch_settings_idx_].lfoResetCount*GLITCH_LFO_DIV)
     {
-      glitchLfo = 1;
-      glitchCounter = 0;
+      glitch_lfo_ = 1;
+      glitch_counter_ = 0;
     }
   }
 
 private:
   VESSL_INLINE bool step_glitch_lfo(const float speed)
   {
-    glitchLfo = glitchLfo + speed;
-    if (glitchLfo >= 1)
+    glitch_lfo_ = glitch_lfo_ + speed;
+    if (glitch_lfo_ >= 1)
     {
-      glitchLfo -= 1;
+      glitch_lfo_ -= 1;
       return true;
     }
-    if (glitchLfo < 0)
+    if (glitch_lfo_ < 0)
     {
-      glitchLfo += 1;
+      glitch_lfo_ += 1;
       return true;
     }
     return false;
@@ -302,11 +307,6 @@ private:
   [[nodiscard]] VESSL_INLINE float freeze_size(const count_t idx) const
   {
     return period() * FREEZE_SETTINGS[idx].clockRatio;
-  }
-
-  VESSL_INLINE static float freeze_speed(const count_t idx)
-  {
-    return FREEZE_SETTINGS[idx].playbackSpeed;
   }
 
   [[nodiscard]] VESSL_INLINE float glitch_size(const count_t idx) const

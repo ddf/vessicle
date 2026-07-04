@@ -110,7 +110,8 @@ public:
   , freeze_rate_(0)
   , freeze_settings_idx_(0)
   , glitch_settings_idx_(0)
-  , freeze_counter_(0), glitch_counter_(0)
+  , freeze_counter_(0)
+  , glitch_counter_(0)
   , samples_since_last_tap_(FREEZE_BUFFER_SIZE)
   , glitch_active_(0)
   , crush_proc_(sample_rate, sample_rate)
@@ -210,8 +211,8 @@ public:
     
     crush_proc_.process(process_buffer_, process_buffer_);
     
-    float glitch_param = glitch();
-    glitch_settings_idx_ = static_cast<int>((1.f - glitch_param) * GLITCH_SETTINGS_COUNT);
+    float glitch_param = glitch().read_analog();
+    glitch_settings_idx_ = static_cast<int>((1.f - glitch_param) * (GLITCH_SETTINGS_COUNT-1));
     float glitch_speed = 1.0f / (glitch_size(glitch_settings_idx_) * GLITCH_LFO_DIV);
     float glitch_prob = params_.glitch_enabled.value ? 0.1f + 0.4f*glitch_param : 0.f;
     if (glitch_prob == 0)

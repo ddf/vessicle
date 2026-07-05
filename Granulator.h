@@ -10,7 +10,6 @@ class Granulator : public vessl::unit_processor<vessl::sample::frame<T, ChannelC
 public:
   using Parameter = vessl::parameter;
   using SampleType = vessl::sample::frame<T, ChannelCount>;
-  using RecordSampleType = typename vessl::sample::type<T>::mono;
   using InterpType = vessl::sample::interpolation::linear;
   using GrainEnvelope = vessl::sample::waves::unipolar::triangle<T>;
   
@@ -63,7 +62,8 @@ public:
                     - grain.size 
                     - params_.grain_offset.value.samples;
       }
-      grain.pan = vessl::math::constrain(params_.grain_pan.value, -1.f, 1.f);
+      float bal = vessl::math::constrain(params_.grain_pan.value, -1.f, 1.f);
+      vessl::sample::make_spatializer(bal, &grain.mix);
       grain.vol = params_.grain_volume.value;
       grain.ramp = sample_delay > 0 ? -(static_cast<float>(vessl::phase_360) / sample_delay) : 0;
       grain.ramp_step = vessl::phase_360 / params_.grain_duration.value.samples;
@@ -79,8 +79,7 @@ public:
 
   [[nodiscard]] VESSL_INLINE SampleType process(const SampleType &in) override
   {
-    RecordSampleType rin = in.to_mono();
-    record_buffer_.write(rin);
+    record_buffer_.write(in);
     return generate();
   }
   
@@ -91,8 +90,7 @@ public:
     while (rin)
     {
       SampleType s = rin.read();
-      RecordSampleType rs = s.to_mono();
-      record_buffer_.write(rs);
+      record_buffer_.write(s);
       //wout << generate();
     }
     
@@ -107,8 +105,8 @@ public:
                         - params_.grain_duration.value.samples;
     while (!in.is_empty())
     {
-      RecordSampleType rs = in.read().to_mono() * scale;
-      RecordSampleType od = record_buffer_.overdub(rs, write_offset);
+      SampleType rs = in.read() * scale;
+      SampleType od = record_buffer_.overdub(rs, write_offset);
       ++write_offset;
     }
   }
@@ -126,7 +124,7 @@ public:
     
     SampleType accum = SampleType(0);
     SampleType samp;
-    RecordSampleType* buffer = record_buffer_.data();
+    SampleType* buffer = record_buffer_.data();
     constexpr vessl::analog_t to_analog = 1.0f / vessl::phase_360;
     for (int i = active_grain_count_ - 1; i >= 0; i--)
     {
@@ -136,8 +134,8 @@ public:
         float gt  = grain.ramp*to_analog;
         float pos = grain.start + grain.size * gt;
         T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp)) * grain.vol;
-        RecordSampleType grn = vessl::sample::readf<InterpType>(buffer, pos) * env;
-        vessl::sample::spatialize(grn.value(), grain.pan, &samp);
+        SampleType grn = vessl::sample::readf<InterpType>(buffer, pos) * env;
+        grain.mix.spatialize(grn, &samp);
         accum += samp;
       }
       
@@ -174,7 +172,7 @@ public:
     
     SampleType samp;
     constexpr vessl::analog_t to_analog = 1.0f / static_cast<float>(vessl::phase_360);
-    RecordSampleType* buffer = record_buffer_.data();
+    SampleType* buffer = record_buffer_.data();
     for (int g = active_grain_count_ - 1; g >= 0; g--)
     {
       Grain& grain = grains_[g];
@@ -219,8 +217,8 @@ public:
           if (grain.ramp >= 0)
           {
             T env = envelope.evaluate(static_cast<vessl::phase_t>(grain.ramp)) * grain.vol;
-            RecordSampleType grn = vessl::sample::readf<InterpType>(scratch_buffer_, scratch_pos) * env;
-            vessl::sample::spatialize(grn.value(), grain.pan, &samp);
+            SampleType grn = vessl::sample::readf<InterpType>(scratch_buffer_, scratch_pos) * env;
+            grain.mix.spatialize(grn, &samp);
             gro += samp;
           }
           
@@ -242,8 +240,8 @@ public:
   // buffer_size must be a power of two!
   static Granulator* create(vessl::size_t buffer_size, vessl::size_t block_size)
   {
-    RecordSampleType* scratch = new RecordSampleType[block_size*2];
-    RecordSampleType* buffer = new RecordSampleType[buffer_size];
+    SampleType* scratch = new SampleType[block_size*2];
+    SampleType* buffer = new SampleType[buffer_size];
     Granulator* granulator = new Granulator(buffer, buffer_size);
     granulator->scratch_buffer_ = scratch;
     return granulator;
@@ -275,7 +273,7 @@ protected:
   }
   
 private:
-  Granulator(RecordSampleType* buffer, size_t buffer_size)
+  Granulator(SampleType* buffer, size_t buffer_size)
     : record_buffer_(buffer, buffer_size)
     , scratch_buffer_(nullptr)
     , record_buffer_size_mask_(buffer_size - 1)
@@ -303,17 +301,17 @@ private:
     float start;
     float size;
     float speed;
-    float pan;
     float vol;
     float dir; // +1 forward, -1 backward
+    SampleType mix;
   };
 
   Grain grains_[MaxGrains];
   
-  vessl::sample::delay_line<RecordSampleType> record_buffer_;
+  vessl::sample::delay_line<SampleType> record_buffer_;
   // to improve performance, we block copy audio from the record buffer 
   // to a smaller scratch buffer before generating each active grain.
-  RecordSampleType* scratch_buffer_;
+  SampleType* scratch_buffer_;
   
   unsigned record_buffer_size_mask_;
   unsigned grain_rate_phasor_ = 0;

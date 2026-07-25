@@ -34,14 +34,17 @@ public:
   sample_t process(const T& in) override
   {
     binary_t frozen = params_.frozen.value;
-    analog_t fade = fader_ = (frozen ? 1.0f : 0.0f);
+    fader_ = (frozen ? 1.0f : 0.0f);
+    analog_t fade = fader_.value;
     sample_t s1 = frozen ? in : delay_.process(in);
     if (!frozen)
     {
       freeze_.buffer().set_write_index(delay_.buffer().get_write_index());
     } 
     T s2 = fade > 0 ? freeze_.generate() : 0.f;
-    return vessl::sample::crossfade(s1, s2, fade);
+    T s3;
+    vessl::sample::crossfade(s1, s2, fade, &s3);
+    return s3;
   }
 
   template<vessl::time::mode TimeMode = vessl::time::mode::slew>

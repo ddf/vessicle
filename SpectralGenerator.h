@@ -1,7 +1,6 @@
 #pragma once
 
 #include "vessl/vessl.h"
-#include "Window.h"
 
 // lightweight extension that allocates and deallocates the correct amount of memory.
 template<typename T, vessl::size_t SpectrumSize>
@@ -32,7 +31,6 @@ public:
       vessl::array<SampleType>(window_data, SpectrumSize), // window
     };
     
-    //Window::triangular(data.window.data(), data.window.size());
     vessl::sample::windows::render(window_type, data.window);
     
     return new SpectralGenerator(data, sample_rate);

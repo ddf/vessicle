@@ -20,12 +20,12 @@ public:
   static SpectralGenerator* create(vessl::analog_t sample_rate, vessl::sample::windows::type window_type)
   {
     constexpr vessl::size_t bands_size = SpectrumSize/2;
-    FrequencyBandType* frequency_data = new FrequencyBandType[bands_size];
+    FrequencyBandType* bands_data = new FrequencyBandType[bands_size];
     ComplexType* spectrum_data = new ComplexType[bands_size];
     SampleType* sample_data = new SampleType[SpectrumSize*2];
     SampleType* window_data = new SampleType[SpectrumSize];
     Data data = {
-      vessl::array<FrequencyBandType>(frequency_data, bands_size), // frequencies
+      vessl::array<FrequencyBandType>(bands_data, bands_size), // bands
       vessl::array<ComplexType>(spectrum_data, bands_size), // spectrum
       vessl::array<SampleType>(sample_data, SpectrumSize*2), // signal
       vessl::array<SampleType>(window_data, SpectrumSize), // window
@@ -44,7 +44,7 @@ public:
       delete[] generator->signal_a_.data();
       // shouldn't need to delete b because it was allocated along with a in create.
       delete[] generator->spectrum_.data();
-      delete[] generator->frequencies_.data();
+      delete[] generator->bands_.data();
     }
     delete generator;
   }

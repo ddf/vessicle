@@ -12,52 +12,20 @@ public:
   using Parameter = vessl::parameter;
   using size_t = vessl::size_t;
   using phase_t = vessl::phase_t;
-  
-  static constexpr int SpectralBandPartials = 40;
-  
-  struct Band
-  {
-    float amplitude;
-    float decay;
-    float phase; // unused now but might bring back
-    int   partials[SpectralBandPartials];
-  };
+  using band_t  = typename SpectralGen::frequency_band;
+  using complex_t = vessl::transform::complex<float>;
   
   // all data arrays should be at least bands_size long.
-  SpectralSympathies(SpectralGen* spec_gen, float sample_rate, size_t bands_size,
-                Band* bands_data, float* spec_bright_data, float* spec_spread_data)
+  SpectralSympathies(SpectralGen* spec_gen, float sample_rate)
     : sample_rate_(sample_rate)
     , spread_bands_max_(SpectrumSize/8)
     , generator_(spec_gen)
-    , spec_bright_(spec_bright_data, bands_size)
-    , spec_spread_(spec_spread_data, bands_size)
-    , bands_(bands_data, bands_size)
     , overlap_size_(SpectrumSize/2)
     , overlap_size_half_(overlap_size_/2)
   {
     params_.volume.value = 1.0f;
     params_.decay.value = vessl::duration_t::from_seconds(1.0f, sample_rate);
     set_decay(1.0f);
-
-    for (int i = 1; i < bands_size; ++i)
-    {
-      const float band_freq = generator_->get_band_frequency(i);
-      bands_[i].amplitude = 0;
-      // boost low frequencies and attenuate high frequencies with an equal loudness curve.
-      // attenuation of high frequencies is to try to prevent distortion that happens when 
-      // the spectrum is particularly overloaded in the high end.
-      float weight = band_freq < 1000.0f 
-        ? vessl::math::constrain(1.0f / vessl::math::elc::b(band_freq), 0.0f, 4.0f) 
-        : vessl::math::elc::b(band_freq);
-
-      for (int p = 0; p < SpectralBandPartials; ++p)
-      {
-        float partial_freq = band_freq*(2 + p);
-        // only add partials most people can actually hear
-        bands_[i].partials[p] = partial_freq < 16000.0f ? generator_->get_band_index(partial_freq) : SpectrumSize;
-      }
-    }
-    spec_spread_.fill(0);
   }
       
   VESSL_INLINE size_t get_band_index(float frequency)
@@ -70,20 +38,20 @@ public:
     return generator_->get_band_frequency(band_index);
   }
   
-  VESSL_INLINE Band& get_band(float freq)
+  VESSL_INLINE band_t& get_band(float freq)
   {
     const size_t idx = generator_->get_band_index(freq);
-    return bands_[idx];
+    return generator_->get_band(idx);
   }
 
   float get_magnitude_mean()
   {
     float accum = 0;
-    for (int i = 1; i < bands_.size(); ++i)
+    for (int i = 1; i < SpectrumSize/2; ++i)
     {
       accum += generator_->get_band(i).magnitude();
     }
-    return (accum / bands_.size());
+    return (accum / (SpectrumSize/2));
   }
   
   void set_spread_bands_max(float num_bands)
@@ -96,26 +64,50 @@ public:
   VESSL_INLINE Parameter brightness() const { return params_.brightness("brightness", 'b'); }
   VESSL_INLINE Parameter volume() const { return params_.volume("volume", 'v'); }
 
-  void excite(int bidx, float amp, float phase)
+  void excite(int bidx, float amp, phase_t phase)
   {
-    if (bidx > 1 && bidx < bands_.size())
+    if (bidx > 1 && bidx < SpectrumSize/2)
     {
-      Band& b = bands_[bidx];
+      band_t& band = generator_->get_band(bidx);
+      const float ba = band.magnitude();
       const float ea = amp;
-      const float ba = b.amplitude;
-      if (ea > ba)
+      if (ba < 1.1f && ea > ba)
       {
-        b.amplitude = ba + 0.9f*(ea - ba);
-        b.decay = 1;
+        band_t delta(ea, phase);
+        delta.subtract(band);
+        delta.scale(0.9f);
+        band.add(delta);
+        
+        amp = band.magnitude()*params_.brightness.value;
+        if (amp > 0.1f)
+        {
+          phase = band.phase();
+          excite(bidx*2, amp, phase);
+        }
+        
+        vessl::analog_t spread_amt = vessl::math::constrain(params_.spread.value, 0.f, 0.99f);
+        size_t j = bidx+1;
+        band_t spread_band = band;
+        while (spread_amt > 0.01f && j < SpectrumSize/2)
+        {
+          band_t& spread_to_band = generator_->get_band(j++);
+          //if (spread_band.magnitude() > spread_to_band.magnitude())
+          {
+            spread_band.subtract(spread_to_band);
+            spread_band.scale(spread_amt);
+            spread_to_band.add(spread_band);
+            spread_amt *= spread_amt;
+            spread_band = spread_to_band;
+          }
+        }
       }
-      b.phase = phase;
     }
   }
   
-  void excite(float freq, float amp)
+  void excite(float freq, float amp, phase_t phase)
   {
     const int bidx = generator_->get_band_index(freq);
-    excite(bidx, amp, 0);
+    excite(bidx, amp, phase);
   }
   
   [[nodiscard]] const parameter_list& parameters() const override { return *this; }
@@ -128,8 +120,7 @@ public:
       set_decay(decay_param);
     }
     
-    // transfer bands into spread array halfway through the overlap
-    // so that we (hopefully) do this work in a different block than synthesis
+    // apply decay to the spectrum between overlaps.
     if ( generator_->get_read_head(0)+overlap_size_half_ == SpectrumSize 
       || generator_->get_read_head(1)+overlap_size_half_ == SpectrumSize
     )
@@ -137,7 +128,8 @@ public:
       fill_spectrum();
     }
     
-    return generator_->generate();
+    const float volume = vessl::math::constrain(params_.volume.value, 0.f, 1.f);
+    return generator_->generate()*volume;
   }
   
   VESSL_INLINE void generate(SampleArray output)
@@ -152,19 +144,12 @@ public:
   static SpectralSympathies* create(float sample_rate)
   {
     SpectralGen* spectral_gen = SpectralGen::create(sample_rate, vessl::sample::windows::type::triangle);
-    size_t bands_max = spectral_gen->get_band_index(16000.f);
-    Band* bands_data = new Band[bands_max];
-    float* bright_data = new float[bands_max];
-    float* spread_data = new float[bands_max];
-    return new SpectralSympathies(spectral_gen, sample_rate, bands_max, bands_data, bright_data, spread_data);
+    return new SpectralSympathies(spectral_gen, sample_rate);
   }
 
   static void destroy(SpectralSympathies* synth)
   {
     SpectralGen::destroy(synth->generator_);
-    delete[] synth->bands_.data();
-    delete[] synth->spec_bright_.data();
-    delete[] synth->spec_spread_.data();
     delete synth;
   }
 
@@ -185,9 +170,6 @@ private:
   float decay_dec_;
   
   SpectralGen* generator_;
-  SampleArray spec_bright_;
-  SampleArray spec_spread_;
-  vessl::array<Band> bands_;
   
   size_t overlap_size_;
   size_t overlap_size_half_;
@@ -216,83 +198,75 @@ private:
 
   VESSL_INLINE void fill_spectrum()
   {
-    constexpr float freq_mult = 1.0f;
-
-    spec_bright_.fill(0);
-    spec_spread_.fill(0);
-
-    for (size_t i = 1; i < bands_.size(); ++i)
-    {
-      process_band(i, bands_.size());
-    }
-
-    // spread the raw bright spectrum with a sort of filter than runs forwards and backwards.
-    // adapted from ExponentialDecayEnvelope
-    const float spread = params_.spread.value;
-    float spread_mult = 1.0 + (vessl::math::log(0.00001f) - vessl::math::log(1.0f)) / (spread_bands_max_*spread + 12);
-    spread_mult *= spread_mult;
-    float pi = 0, pj = 0;
-    const size_t count = spec_bright_.size();
+    // constexpr float freq_mult = 1.0f;
+    //
+    // spec_bright_.fill(0);
+    // spec_spread_.fill(0);
+    //
+    // for (size_t i = 1; i < bands_.size(); ++i)
+    // {
+    //   process_band(i, bands_.size());
+    // }
+    //
+    // // spread the raw bright spectrum with a sort of filter than runs forwards and backwards.
+    // // adapted from ExponentialDecayEnvelope
+    // const float spread = params_.spread.value;
+    // float spread_mult = 1.0 + (vessl::math::log(0.00001f) - vessl::math::log(1.0f)) / (spread_bands_max_*spread + 12);
+    // spread_mult *= spread_mult;
+    // float pi = 0, pj = 0;
+    // const size_t count = spec_bright_.size();
+    // for (size_t i = 1; i < count; ++i)
+    // {
+    //   float ci = spec_bright_[i];
+    //   spec_spread_[i] += ci + pi;
+    //   pi = vessl::math::max(ci, pi)*spread_mult;
+    //
+    //   // we don't add in bright on the backwards pass
+    //   // because it gets added in the forward pass
+    //   size_t j = count - 1 - i;
+    //   float cj = spec_bright_[j];
+    //   spec_spread_[j] += pj;
+    //   pj = vessl::math::max(cj, pj)*spread_mult;
+    // }
+    
+    // @todo think I still need to spread
+    const size_t count = SpectrumSize/2;
     for (size_t i = 1; i < count; ++i)
     {
-      float ci = spec_bright_[i];
-      spec_spread_[i] += ci + pi;
-      pi = vessl::math::max(ci, pi)*spread_mult;
-    
-      // we don't add in bright on the backwards pass
-      // because it gets added in the forward pass
-      size_t j = count - 1 - i;
-      float cj = spec_bright_[j];
-      spec_spread_[j] += pj;
-      pj = vessl::math::max(cj, pj)*spread_mult;
-    }
-    
-    const float volume = vessl::math::constrain(params_.volume.value, 0.f, 1.f);
-    for (size_t i = 1; i < spec_spread_.size()-1; ++i)
-    {
-      // grab the magnitude as set by our pluck with spread pass
-      const float a = vessl::math::min(spec_spread_[i] * volume, volume);
-      //const float a = vessl::math::min(bands_[i].amplitude * spectral_magnitude_, spectral_magnitude_);
-      
-      // copy result into the generator's band magnitudes
-      auto& gen_band = generator_->get_band(i);
-      gen_band.set_magnitude(a);
-
-      // #TODO probably sounds better to do the pitch-shift here?
-      // At this point we have gAnaMagn and gAnaFreq from
-      // http://blogs.zynaptiq.com/bernsee/pitch-shifting-using-the-ft/
+      band_t& gen_band = generator_->get_band(i);
+      gen_band.scale(decay_dec_);
     }
   }
 
-  VESSL_INLINE void process_band(int idx, int spec_size)
-  {
-    Band& b = bands_[idx];
-    if (LinearDecay)
-    {
-      b.decay = b.decay > decay_dec_ ? b.decay - decay_dec_ : 0;
-    }
-    else
-    {
-      //b.decay *= decayDec;
-      b.amplitude *= decay_dec_;
-    }
-    
-    //if (b.decay > 0)
-    {
-      float bright = params_.brightness.value;
-      //float a = b.decay*b.amplitude;
-      float a = b.amplitude;
-      spec_bright_[idx] += a;
-      constexpr int iters = SpectralBandPartials;
-      for (int i = 0; i < iters && b.partials[i] < spec_size; ++i)
-      {
-        int p = 2 + i;
-        a *= bright;
-        int pidx = b.partials[i];
-        spec_bright_[pidx] += a / p;
-      }
-    }
-  }
+  // VESSL_INLINE void process_band(int idx, int spec_size)
+  // {
+  //   Band& b = bands_[idx];
+  //   if (LinearDecay)
+  //   {
+  //     b.decay = b.decay > decay_dec_ ? b.decay - decay_dec_ : 0;
+  //   }
+  //   else
+  //   {
+  //     //b.decay *= decayDec;
+  //     b.amplitude *= decay_dec_;
+  //   }
+  //   
+  //   //if (b.decay > 0)
+  //   {
+  //     float bright = params_.brightness.value;
+  //     //float a = b.decay*b.amplitude;
+  //     float a = b.amplitude;
+  //     spec_bright_[idx] += a;
+  //     constexpr int iters = SpectralBandPartials;
+  //     for (int i = 0; i < iters && b.partials[i] < spec_size; ++i)
+  //     {
+  //       int p = 2 + i;
+  //       a *= bright;
+  //       int pidx = b.partials[i];
+  //       spec_bright_[pidx] += a / p;
+  //     }
+  //   }
+  // }
 
 protected:
   vessl::parameter element_at(vessl::size_t index) const override

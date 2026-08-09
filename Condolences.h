@@ -168,6 +168,8 @@ public:
       out[i] = spectral_gen_->generate();
     }
   }
+
+  VESSL_INLINE analog_t get_decay_min() const { return decay_min_; };
   
   VESSL_INLINE typename SpectralGen::band_t get_band(analog_t freq_in_hz) const
   {

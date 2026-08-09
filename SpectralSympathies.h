@@ -64,7 +64,7 @@ public:
   VESSL_INLINE Parameter brightness() const { return params_.brightness("brightness", 'b'); }
   VESSL_INLINE Parameter volume() const { return params_.volume("volume", 'v'); }
 
-  void excite(int bidx, float amp, phase_t phase)
+  void excite(size_t bidx, float amp, phase_t phase)
   {
     if (bidx > 1 && bidx < SpectrumSize/2)
     {

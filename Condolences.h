@@ -129,7 +129,7 @@ public:
     
     const size_t string_count = vessl::math::max(get_string_count(), 1ull);
     constexpr analog_t mag_norm = 256.f / static_cast<float>(SpectrumSize);
-    const float feed_scale = feedback_.value;
+    //const float feed_scale = feedback_.value;
     for (size_t i = 0; i < block_size; ++i)
     {
       input_buffer_[input_buffer_write_++] = in[i];
@@ -143,10 +143,10 @@ public:
         // transfer spectrum data from input analysis to spectral_gen
         // by sampling only those frequencies represented by our strings.
         // i.e. comb filter it.
-        for (int si = 0; si < string_count; ++si)
+        for (size_t si = 0; si < string_count; ++si)
         {
           const float freq = frequency_of_string(si);
-          const int bi = spectral_gen_->get_band_index(freq);
+          const size_t bi = spectral_gen_->get_band_index(freq);
           if (bi > 0 && bi < input_spectrum_.size())
           {
             complex_t input = input_spectrum_[bi];

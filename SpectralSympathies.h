@@ -66,7 +66,7 @@ public:
 
   void excite(size_t bidx, float amp, phase_t phase)
   {
-    if (bidx > 1 && bidx < SpectrumSize/2)
+    //if (bidx > 1 && bidx < SpectrumSize/2)
     {
       band_t& band = generator_->get_band(bidx);
       const float ba = band.magnitude();
@@ -77,29 +77,6 @@ public:
         delta.subtract(band);
         delta.scale(0.9f);
         band.add(delta);
-        
-        amp = band.magnitude()*params_.brightness.value;
-        if (amp > 0.1f)
-        {
-          phase = band.phase();
-          excite(bidx*2, amp, phase);
-        }
-        
-        vessl::analog_t spread_amt = vessl::math::constrain(params_.spread.value, 0.f, 0.99f);
-        size_t j = bidx+1;
-        band_t spread_band = band;
-        while (spread_amt > 0.01f && j < SpectrumSize/2)
-        {
-          band_t& spread_to_band = generator_->get_band(j++);
-          //if (spread_band.magnitude() > spread_to_band.magnitude())
-          {
-            spread_band.subtract(spread_to_band);
-            spread_band.scale(spread_amt);
-            spread_to_band.add(spread_band);
-            spread_amt *= spread_amt;
-            spread_band = spread_to_band;
-          }
-        }
       }
     }
   }

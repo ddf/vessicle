@@ -60,6 +60,9 @@ public:
   using Window = vessl::sample::windows::type;
   using FFT = vessl::transform::fft<sample_t>;
   using Frequency = vessl::frequency<analog_t>;
+
+  static constexpr size_t spread_width = 4;
+  static constexpr float spread_pct = 0.1f;
   
   Condolences(
     const analog_t sample_rate, 
@@ -71,10 +74,10 @@ public:
     SpectralGen* spectral_generator
   )
   : sample_rate_(sample_rate)
-  , density_min_(64)
-  , density_max_(static_cast<float>(SpectrumSize)/4.f)
-  , band_first_idx_(2.f)
-  , band_last_idx_(spectral_generator->get_band_index(sample_rate * 0.49f))
+  , density_min_(16)
+  , density_max_(static_cast<float>(SpectrumSize)/16.f)
+  , band_first_idx_(1.f + spread_width)
+  , band_last_idx_(static_cast<float>(SpectrumSize/2) - spread_width - 1)
   , decay_min_(static_cast<float>(SpectrumSize) * 0.5f / sample_rate)
   , input_buffer_write_(0)
   , input_buffer_(input_buffer_data, SpectrumSize)
@@ -121,10 +124,10 @@ public:
       + 0.2f*params_.spread.value
       + 0.2f*params_.brightness.value);
     
-    spectral_gen_->spread() = spread_.value;
-    spectral_gen_->set_spread_bands_max(spread_max_.value);
+    //spectral_gen_->spread() = spread_.value;
+    //spectral_gen_->set_spread_bands_max(spread_max_.value);
     spectral_gen_->decay() = vessl::duration_t::from_seconds(decay_.value, sample_rate_);
-    spectral_gen_->brightness() = brightness_.value;
+    //spectral_gen_->brightness() = brightness_.value;
     spectral_gen_->volume() = volume_.value;
     
     const size_t string_count = vessl::math::max(get_string_count(), 1ull);
@@ -143,16 +146,28 @@ public:
         // transfer spectrum data from input analysis to spectral_gen
         // by sampling only those frequencies represented by our strings.
         // i.e. comb filter it.
+        const size_t iss = input_spectrum_.size();
         for (size_t si = 0; si < string_count; ++si)
         {
           const float freq = frequency_of_string(si);
           const size_t bi = spectral_gen_->get_band_index(freq);
-          if (bi > 0 && bi < input_spectrum_.size())
+          if (bi > 0 && bi < iss)
           {
+            float mag = mag_norm;
             complex_t input = input_spectrum_[bi];
-            const float in_mag = input.magnitude() * mag_norm;
-            const vessl::phase_t in_phase = input.phase();
+            float in_mag = input.magnitude() * mag;
+            vessl::phase_t in_phase = input.phase();
             spectral_gen_->excite(bi, in_mag, in_phase);
+            for(size_t si = 1; si < spread_width + 1; ++si)
+            {
+              mag *= spread_.value;
+              size_t hi = bi+si;
+              size_t lo = bi-si;
+              input = input_spectrum_[lo];
+              spectral_gen_->excite(lo, input.magnitude()*mag, input.phase());
+              input = input_spectrum_[hi];
+              spectral_gen_->excite(hi, input.magnitude()*mag, input.phase());
+            }
           }
         }
         

@@ -65,7 +65,8 @@ public:
   static constexpr float spread_pct = 0.1f;
   
   Condolences(
-    const analog_t sample_rate, 
+    const analog_t sample_rate,
+    const size_t block_size, 
     sample_t* input_buffer_data, 
     sample_t* input_window_data,
     sample_t* input_analyze_data, 
@@ -132,7 +133,7 @@ public:
     
     const size_t string_count = vessl::math::max(get_string_count(), 1ull);
     constexpr analog_t mag_norm = 256.f / static_cast<float>(SpectrumSize);
-    //const float feed_scale = feedback_.value;
+    const float feed_scale = feedback_.value;
     for (size_t i = 0; i < block_size; ++i)
     {
       input_buffer_[input_buffer_write_++] = in[i];
@@ -155,6 +156,13 @@ public:
           {
             float mag = mag_norm;
             complex_t input = input_spectrum_[bi];
+            const size_t fi = bi/2;
+            if (fi > 0)
+            {
+              complex_t feed = feedback_spectrum_[fi];
+              input.r = vessl::math::lerp(input.r, feed.r, feed_scale);
+              input.i = vessl::math::lerp(input.i, feed.i, feed_scale);
+            }
             float in_mag = input.magnitude() * mag;
             vessl::phase_t in_phase = input.phase();
             spectral_gen_->excite(bi, in_mag, in_phase);
@@ -163,9 +171,25 @@ public:
               mag *= spread_.value;
               size_t hi = bi+si;
               size_t lo = bi-si;
+              
               input = input_spectrum_[lo];
+              const size_t flo = lo/2;
+              if (flo > 0)
+              {
+                complex_t feed = feedback_spectrum_[flo];
+                input.r = vessl::math::lerp(input.r, feed.r, feed_scale);
+                input.i = vessl::math::lerp(input.i, feed.i, feed_scale);
+              }
               spectral_gen_->excite(lo, input.magnitude()*mag, input.phase());
+
               input = input_spectrum_[hi];
+              const size_t fhi = hi/2;
+              if (fhi > 0)
+              {
+                complex_t feed = feedback_spectrum_[fhi];
+                input.r = vessl::math::lerp(input.r, feed.r, feed_scale);
+                input.i = vessl::math::lerp(input.i, feed.i, feed_scale);
+              }
               spectral_gen_->excite(hi, input.magnitude()*mag, input.phase());
             }
           }
@@ -213,7 +237,7 @@ public:
     return vessl::math::lerp(log_freq, lin_freq, spacing_.value) * sample_rate_;
   }
   
-  static Condolences* create(vessl::analog_t sample_rate)
+  static Condolences* create(vessl::analog_t sample_rate, vessl::size_t block_size)
   {
     sample_t* input_buffer_data = new sample_t[SpectrumSize];
     sample_t* input_window_data = new sample_t[SpectrumSize];
@@ -221,7 +245,7 @@ public:
     complex_t* input_spectrum_data = new complex_t[SpectrumSize/2];
     complex_t* feedback_spectrum_data = new complex_t[SpectrumSize/2];
     SpectralGen* spectral_generator = SpectralGen::create(sample_rate);
-    return new Condolences(sample_rate,
+    return new Condolences(sample_rate, block_size,
       input_buffer_data, 
       input_window_data, 
       input_analyze_data,

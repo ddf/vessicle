@@ -61,7 +61,7 @@ public:
 
   VESSL_INLINE Parameter spread() const { return params_.spread("spread", 's'); }
   VESSL_INLINE Parameter decay() const { return params_.decay("decay", 'd'); }\
-  VESSL_INLINE Parameter brightness() const { return params_.brightness("brightness", 'b'); }
+  VESSL_INLINE Parameter melt() const { return params_.melt("melt", 'm'); }
   VESSL_INLINE Parameter volume() const { return params_.volume("volume", 'v'); }
 
   void excite(size_t bidx, float amp, phase_t phase)
@@ -69,9 +69,9 @@ public:
     //if (bidx > 1 && bidx < SpectrumSize/2)
     {
       band_t& band = generator_->get_band(bidx);
-      const float ba = band.magnitude();
+      float ba = band.magnitude();
       const float ea = amp;
-      if (ba < 1.1f && ea > ba)
+      if (ba < 0.9f && ea > ba)
       {
         band_t delta(ea, phase);
         delta.subtract(band);
@@ -135,7 +135,7 @@ private:
   {
     vessl::duration_p decay;
     vessl::analog_p   spread;
-    vessl::analog_p   brightness;
+    vessl::analog_p   melt;
     vessl::analog_p   volume;
   } params_;
   
@@ -207,11 +207,23 @@ private:
     // }
     
     // @todo think I still need to spread
+    const float mlt = params_.melt.value;
     const size_t count = SpectrumSize/2;
     for (size_t i = 1; i < count; ++i)
     {
-      band_t& gen_band = generator_->get_band(i);
-      gen_band.scale(decay_dec_);
+      band_t& band = generator_->get_band(i);
+      
+      // "melt" some of this band's energy into the band below,
+      // wrapping around to the top of the spectrum if we are at the bottom.
+      const size_t mi = i == 1 ? count - 1 : i-1;
+      band_t& target = generator_->get_band(mi);
+      band_t  delt = band;
+      delt.scale(mlt);
+      band.scale(1.0f - mlt);
+      target.add(delt);
+
+      // now apply normal decay to this band
+      band.scale(decay_dec_);
     }
   }
 
@@ -252,7 +264,7 @@ protected:
     {
       case 0: return decay();
       case 1: return spread();
-      case 2: return brightness();
+      case 2: return melt();
       case 3: return volume();
       default: return Parameter::none();
     }

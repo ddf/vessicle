@@ -95,7 +95,7 @@ public:
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
   [[nodiscard]] Parameter spacing() const { return params_.spacing("spacing", 's'); }
   [[nodiscard]] Parameter spread() const { return params_.spread("spread", 'r'); }
-  [[nodiscard]] Parameter brightness() const { return params_.brightness("brightness", 'b'); }
+  [[nodiscard]] Parameter melt() const { return params_.melt("melt", 'm'); }
   [[nodiscard]] Parameter decay() const { return params_.decay("decay", 'c'); }
   [[nodiscard]] Parameter feedback() const { return params_.feedback("feedback", 'f'); }
   
@@ -116,24 +116,21 @@ public:
     spread_ = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
     spread_max_ = vessl::math::lerp(SpectrumSize/4.f, SpectrumSize/64.f, params_.density.value);
     decay_ = vessl::math::max(decay_min_, params_.decay.value);
-    brightness_ = params_.brightness.value;
-    feedback_ = params_.feedback.value * 0.5f;
+    melt_ = params_.melt.value;
     
     // reduce volume based on combination of decay, spread, and brightness parameters
     volume_ = vessl::math::interp<vessl::math::easing::expo::out>(1.0f, 0.5f, 
-      0.6f*(params_.decay.value*0.1f)
-      + 0.2f*params_.spread.value
-      + 0.2f*params_.brightness.value);
+        0.2f*params_.decay.value
+      + 0.2f*params_.spread.value);
     
     //spectral_gen_->spread() = spread_.value;
     //spectral_gen_->set_spread_bands_max(spread_max_.value);
     spectral_gen_->decay() = vessl::duration_t::from_seconds(decay_.value, sample_rate_);
-    //spectral_gen_->brightness() = brightness_.value;
+    spectral_gen_->melt() = melt_.value;
     spectral_gen_->volume() = volume_.value;
     
     const size_t string_count = vessl::math::max(get_string_count(), 1ull);
     constexpr analog_t mag_norm = 256.f / static_cast<float>(SpectrumSize);
-    const float feed_scale = feedback_.value;
     for (size_t i = 0; i < block_size; ++i)
     {
       input_buffer_[input_buffer_write_++] = in[i];
@@ -156,13 +153,6 @@ public:
           {
             float mag = mag_norm;
             complex_t input = input_spectrum_[bi];
-            const size_t fi = bi/2;
-            if (fi > 0)
-            {
-              complex_t feed = feedback_spectrum_[fi];
-              input.r = vessl::math::lerp(input.r, feed.r, feed_scale);
-              input.i = vessl::math::lerp(input.i, feed.i, feed_scale);
-            }
             float in_mag = input.magnitude() * mag;
             vessl::phase_t in_phase = input.phase();
             spectral_gen_->excite(bi, in_mag, in_phase);
@@ -173,29 +163,13 @@ public:
               size_t lo = bi-si;
               
               input = input_spectrum_[lo];
-              const size_t flo = lo/2;
-              if (flo > 0)
-              {
-                complex_t feed = feedback_spectrum_[flo];
-                input.r = vessl::math::lerp(input.r, feed.r, feed_scale);
-                input.i = vessl::math::lerp(input.i, feed.i, feed_scale);
-              }
               spectral_gen_->excite(lo, input.magnitude()*mag, input.phase());
 
               input = input_spectrum_[hi];
-              const size_t fhi = hi/2;
-              if (fhi > 0)
-              {
-                complex_t feed = feedback_spectrum_[fhi];
-                input.r = vessl::math::lerp(input.r, feed.r, feed_scale);
-                input.i = vessl::math::lerp(input.i, feed.i, feed_scale);
-              }
               spectral_gen_->excite(hi, input.magnitude()*mag, input.phase());
             }
           }
         }
-        
-        input_spectrum_.copy_to(feedback_spectrum_);
         
         // copy the back half of the array to the front half
         // continue recording input from the middle of the array.
@@ -276,7 +250,7 @@ protected:
       case 0: return density();
       case 1: return spacing();
       case 2: return spread();
-      case 3: return brightness();
+      case 3: return melt();
       case 4: return decay();
       case 5: return feedback();
       default: return Parameter::none();
@@ -289,7 +263,7 @@ private:
     vessl::analog_p density;
     vessl::analog_p spacing;
     vessl::analog_p spread;
-    vessl::analog_p brightness;
+    vessl::analog_p melt;
     vessl::analog_p decay;
     vessl::analog_p feedback;
   } params_;
@@ -298,7 +272,7 @@ private:
   Smoother spacing_;
   Smoother spread_;
   Smoother spread_max_;
-  Smoother brightness_;
+  Smoother melt_;
   Smoother decay_;
   Smoother feedback_;
   Smoother volume_;

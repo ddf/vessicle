@@ -44,7 +44,7 @@ DESCRIPTION:
 // adjacent bands we are doing so with real data.
 // The effect the SpectralSympathies generator is doing with spread is more like a "smear".
 
-template<typename T, size_t SpectrumSize>
+template<typename T, size_t SpectrumSize, size_t Overlap>
 class Condolences : public vessl::unit_processor<T>, public vessl::plist<7>
 {
 public:
@@ -54,7 +54,7 @@ public:
   using complex_t = vessl::transform::complex<sample_t>;
   using Smoother = vessl::math::easing::smoother<vessl::analog_t>;
   using Parameter = vessl::parameter;
-  using SpectralGen = SpectralSympathies<SpectrumSize, false>;
+  using SpectralGen = SpectralSympathies<SpectrumSize, Overlap, false>;
   using SampleArray = vessl::array<sample_t>;
   using ComplexArray = vessl::array<complex_t>;
   using Window = vessl::sample::windows::type;
@@ -76,7 +76,7 @@ public:
   )
   : sample_rate_(sample_rate)
   , density_min_(16)
-  , density_max_(static_cast<float>(SpectrumSize)/16.f)
+  , density_max_(static_cast<float>(SpectrumSize)/4.f)
   , band_first_idx_(1.f + spread_width)
   , band_last_idx_(static_cast<float>(SpectrumSize/2) - spread_width - 1)
   , decay_min_(static_cast<float>(SpectrumSize) * 0.5f / sample_rate)

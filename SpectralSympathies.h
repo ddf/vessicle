@@ -4,11 +4,11 @@
 #include "BlurKernel.h"
 #include "vessl/vessl.h"
 
-template<vessl::size_t SpectrumSize, bool LinearDecay = true>
+template<vessl::size_t SpectrumSize, vessl::size_t Overlap = 1, bool LinearDecay = true>
 class SpectralSympathies : public vessl::unit_generator<float>, vessl::plist<4>
 {
 public:
-  using SpectralGen = SpectralGenerator<float, SpectrumSize>;
+  using SpectralGen = SpectralGenerator<float, SpectrumSize, Overlap>;
   using band_t  = typename SpectralGen::frequency_band;
 
   using Spectrum = vessl::array<band_t>;
@@ -22,7 +22,7 @@ public:
   SpectralSympathies(SpectralGen* spec_gen, float sample_rate)
     : sample_rate_(sample_rate)
     , generator_(spec_gen)
-    , overlap_size_(SpectrumSize/2)
+    , overlap_size_(SpectrumSize/(Overlap*2))
     , overlap_size_half_(overlap_size_/2)
   {
     params_.volume.value = 1.0f;
@@ -68,11 +68,11 @@ public:
       band_t& band = generator_->get_band(bidx);
       float ba = band.magnitude();
       const float ea = amp;
-      if (ba < 0.9f && ea > ba)
+      if (ba < 0.8f && ea > ba)
       {
         band_t delta(ea, phase);
         delta.subtract(band);
-        delta.scale(0.1f);
+        delta.scale(0.2f);
         band.add(delta);
       }
     }
@@ -95,9 +95,7 @@ public:
     }
     
     // apply decay to the spectrum between overlaps.
-    if ( generator_->get_read_head(0)+overlap_size_half_ == SpectrumSize 
-      || generator_->get_read_head(1)+overlap_size_half_ == SpectrumSize
-    )
+    if (generator_->get_overlap_count() == overlap_size_half_)
     {
       fill_spectrum();
     }
@@ -184,6 +182,7 @@ private:
       band.scale(decay_dec_);
     }
 
+    // @todo can overwhelm the sound pretty easily
     const size_t smr = static_cast<size_t>(params_.spread.value*32) * 2;
     if (smr > 0)
     {

@@ -10,20 +10,22 @@ class SpectralSympathies : public vessl::unit_generator<float>, vessl::plist<4>
 public:
   using SpectralGen = SpectralGenerator<float, SpectrumSize, Overlap>;
   using band_t  = typename SpectralGen::frequency_band;
-
-  using Spectrum = vessl::array<band_t>;
   using SampleArray = vessl::array<float>;
   using Parameter = vessl::parameter;
   using size_t = vessl::size_t;
   using phase_t = vessl::phase_t;
   using complex_t = vessl::transform::complex<float>;
+  using SmearLfo = vessl::sample::waves::unipolar::triangle<float>;
+
+  static constexpr size_t overlap_size = (SpectrumSize/(Overlap*2));
+  static constexpr size_t overlap_size_half = (overlap_size/2);
+  static constexpr size_t smear_bands_max = 16;
+  static constexpr phase_t smear_lfo_step = vessl::phase_180 / Overlap / smear_bands_max;
   
-  // all data arrays should be at least bands_size long.
   SpectralSympathies(SpectralGen* spec_gen, float sample_rate)
     : sample_rate_(sample_rate)
+    , smear_lfo_phase_(0)
     , generator_(spec_gen)
-    , overlap_size_(SpectrumSize/(Overlap*2))
-    , overlap_size_half_(overlap_size_/2)
   {
     params_.volume.value = 1.0f;
     params_.decay.value = vessl::duration_t::from_seconds(1.0f, sample_rate);
@@ -95,7 +97,7 @@ public:
     }
     
     // apply decay to the spectrum between overlaps.
-    if (generator_->get_overlap_count() == overlap_size_half_)
+    if (generator_->get_overlap_count() == overlap_size_half)
     {
       fill_spectrum();
     }
@@ -122,7 +124,6 @@ public:
   static void destroy(SpectralSympathies* synth)
   {
     SpectralGen::destroy(synth->generator_);
-    delete[] synth->spectrum_.data();
     delete synth;
   }
 
@@ -144,18 +145,18 @@ private:
   {
     // having a shorter decay than the overlap size doesn't make sense
     // and we also want to avoid divide-by-zero.
-    decay_seconds_ = vessl::math::max(overlap_size_ / sample_rate_, in_seconds);
+    decay_seconds_ = vessl::math::max(overlap_size / sample_rate_, in_seconds);
     if constexpr (LinearDecay)
     {
       // amplitude needs to decrease by 1 / (decaySeconds * sampleRate()) every sample.
       // eg decaySeconds == 1 -> 1 / sampleRate()
       //    decaySeconds == 0.5 -> 1 / (0.5 * sampleRate), which is twice as fast, equivalent to 2 / sampleRate()
       // since we generate a new buffer every overlapSize samples, we multiply that rate by overlapSize, giving:
-      decay_dec_ = overlap_size_ / (decay_seconds_ * sample_rate_);
+      decay_dec_ = overlap_size / (decay_seconds_ * sample_rate_);
     }
     else // exponential decay
     {
-      float block_rate = sample_rate_ / overlap_size_;
+      float block_rate = sample_rate_ / overlap_size;
       float length_in_blocks = decay_seconds_ * block_rate;
       decay_dec_ = 1.0 + vessl::math::log(0.0001f) / (length_in_blocks + 20);
     }
@@ -182,59 +183,31 @@ private:
       band.scale(decay_dec_);
     }
 
-    // @todo can overwhelm the sound pretty easily
-    const size_t smr = static_cast<size_t>(params_.spread.value*32) * 2;
-    if (smr > 0)
+    smear_lfo_phase_ += smear_lfo_step;
+    float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_)*(smear_bands_max/2);
+    float smear_amt = params_.spread.value * 0.1f;
+    const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
+    if (smear_width > 0 && smear_amt > 0)
     {
-      for (size_t i = 2 + smr; i < count/2 - smr; i++)
+      for (size_t i = 2 + smear_width; i < count/2 - smear_width; i++)
       {
         band_t& band = generator_->get_band(i);
         
         // "smear" the spectrum contents by blending nearby bands
-        const size_t li = i / smr;
-        const size_t hi = i * smr;
+        const size_t li = i / smear_width;
+        const size_t hi = i * smear_width;
         band_t lob = li > 0 ? generator_->get_band(li) : band_t();
         band_t hib = hi < count ? generator_->get_band(hi) : band_t();
 
-        lob.scale(0.2f);
-        hib.scale(0.2f);
+        lob.scale(smear_amt);
+        hib.scale(smear_amt);
         band.add(lob);
         band.add(hib);
         float mag = band.magnitude();
-        band.scale(mag > 0.8f ? 0.4f : 0.6f);
+        band.scale(mag > 0.8f ? 0.8f - smear_amt*2 : 1.0f - smear_amt*2);
       }
     }
   }
-
-  // VESSL_INLINE void process_band(int idx, int spec_size)
-  // {
-  //   Band& b = bands_[idx];
-  //   if (LinearDecay)
-  //   {
-  //     b.decay = b.decay > decay_dec_ ? b.decay - decay_dec_ : 0;
-  //   }
-  //   else
-  //   {
-  //     //b.decay *= decayDec;
-  //     b.amplitude *= decay_dec_;
-  //   }
-  //   
-  //   //if (b.decay > 0)
-  //   {
-  //     float bright = params_.brightness.value;
-  //     //float a = b.decay*b.amplitude;
-  //     float a = b.amplitude;
-  //     spec_bright_[idx] += a;
-  //     constexpr int iters = SpectralBandPartials;
-  //     for (int i = 0; i < iters && b.partials[i] < spec_size; ++i)
-  //     {
-  //       int p = 2 + i;
-  //       a *= bright;
-  //       int pidx = b.partials[i];
-  //       spec_bright_[pidx] += a / p;
-  //     }
-  //   }
-  // }
 
   struct 
   {
@@ -248,14 +221,8 @@ private:
   // cache this so we only recalculate decay_dec_ when necessary.
   float decay_seconds_;
   float decay_dec_;
+  SmearLfo smear_lfo_;
+  phase_t smear_lfo_phase_;
 
-  // cached so we only recalc the kernel when needed
-  float smear_amount_;
-  
-  Spectrum     spectrum_;
   SpectralGen* generator_;
-  
-  size_t overlap_size_;
-  size_t overlap_size_half_;
-  size_t overlap_size_mask_;
 };

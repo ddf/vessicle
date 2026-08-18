@@ -20,7 +20,8 @@ LICENSE:
 
 DESCRIPTION:
     Synthesizes sound by using overlap-add IFFT synthesis of a spectrum
-    that is "excited" by the spectrum derived from the analyzed input.
+    that is "excited" by the spectrum derived from the analyzed input
+    and then modified in various ways.
 */
 
 #pragma once
@@ -28,24 +29,16 @@ DESCRIPTION:
 #include "vessl/vessl.h"
 #include "SpectralSympathies.h"
 
-// @todo - so a thing that sounds pretty cool is reducing the SpectrumSize down to like 512.
-// It creates more of a talkbox kind of effect.
-// What I want to try is:
-// Density is a blend between a set of small forward FFTs.
-// The generator continues to run at 4096, but ideally with higher overlap.
-// Or dynamic overlap based on Density?
-// Equivalent might be to group the forward FFT bands into average bands, which are our strings.
-// So we can run the forward FFT at the same size as the generator,
-// but when exciting it we are using average band information rather than a single band's information.
-// The string mapping would then blend from matching center frequency to center frequency
-// to a linear mapping from string index to generator band index.
-//
-// Another thot: spread could be around the strings from the source FFT, so that when exciting
-// adjacent bands we are doing so with real data.
-// The effect the SpectralSympathies generator is doing with spread is more like a "smear".
+/** @todo
+  - change density to integer instead of [0,1]
+  - expose spread_width as a parameter (integer like density)
+  - try having excite move towards the source spectrum value (pass in actual complex number)
+  - perform forward fft at same rate as overlap for generation
+  - revisit volume adjustment formula
+*/
 
 template<typename T, size_t SpectrumSize, size_t Overlap>
-class Condolences : public vessl::unit_processor<T>, public vessl::plist<7>
+class Condolences : public vessl::unit_processor<T>, public vessl::plist<6>
 {
 public:
   using size_t = vessl::size_t;
@@ -61,8 +54,11 @@ public:
   using FFT = vessl::transform::fft<sample_t>;
   using Frequency = vessl::frequency<analog_t>;
 
+  static constexpr size_t overlap_size = SpectrumSize / (Overlap*2);
   static constexpr size_t spread_width = 4;
-  static constexpr float spread_pct = 0.1f;
+  // for clamping the param
+  static constexpr float density_min = 4;
+  static constexpr float density_max = (SpectrumSize/(spread_width*2));
   
   Condolences(
     const analog_t sample_rate,
@@ -71,12 +67,9 @@ public:
     sample_t* input_window_data,
     sample_t* input_analyze_data, 
     complex_t* input_spectrum_data, 
-    complex_t* feedback_spectrum_data,
     SpectralGen* spectral_generator
   )
   : sample_rate_(sample_rate)
-  , density_min_(16)
-  , density_max_(static_cast<float>(SpectrumSize)/4.f)
   , band_first_idx_(1.f + spread_width)
   , band_last_idx_(static_cast<float>(SpectrumSize/2) - spread_width - 1)
   , decay_min_(static_cast<float>(SpectrumSize) * 0.5f / sample_rate)
@@ -85,7 +78,6 @@ public:
   , input_window_(input_window_data, SpectrumSize)
   , input_analyze_(input_analyze_data, SpectrumSize)
   , input_spectrum_(input_spectrum_data, SpectrumSize / 2)
-  , feedback_spectrum_(feedback_spectrum_data, SpectrumSize / 2)
   , input_transform_(SpectrumSize)
   , spectral_gen_(spectral_generator)
   {
@@ -98,7 +90,6 @@ public:
   [[nodiscard]] Parameter smear() const { return params_.smear("smear", 'e'); }
   [[nodiscard]] Parameter melt() const { return params_.melt("melt", 'm'); }
   [[nodiscard]] Parameter decay() const { return params_.decay("decay", 'c'); }
-  [[nodiscard]] Parameter feedback() const { return params_.feedback("feedback", 'f'); }
   
   [[nodiscard]] const parameter_list& parameters() const override { return *this; }
   
@@ -112,11 +103,10 @@ public:
   {
     const size_t block_size = in.size();
     
-    density_ = vessl::math::lerp(density_min_,  density_max_, params_.density.value);
+    density_ = vessl::math::constrain(params_.density.value, density_min, density_max);
     spacing_ = params_.spacing.value;
-    smear_ = params_.smear.value;
+    smear_    = params_.smear.value;
     spread_ = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
-    spread_max_ = vessl::math::lerp(SpectrumSize/4.f, SpectrumSize/64.f, params_.density.value);
     decay_ = vessl::math::max(decay_min_, params_.decay.value);
     melt_ = params_.melt.value;
     
@@ -172,11 +162,11 @@ public:
           }
         }
         
-        // copy the back half of the array to the front half
-        // continue recording input from the middle of the array.
+        // copy the back section of the array to the front section
+        // continue recording input from overlap_size before the end.
         // doing this means we can update the spectral data for sound generation every overlap.
-        input_buffer_write_ = SpectrumSize / 2;
-        SampleArray input_buffer_back(input_buffer_.data() + input_buffer_write_, input_buffer_write_);
+        input_buffer_write_ = SpectrumSize - overlap_size;
+        SampleArray input_buffer_back(input_buffer_.data() + overlap_size, input_buffer_write_);
         input_buffer_back.copy_to(input_buffer_);
       }
       out[i] = spectral_gen_->generate();
@@ -218,14 +208,12 @@ public:
     sample_t* input_window_data = new sample_t[SpectrumSize];
     sample_t* input_analyze_data = new sample_t[SpectrumSize];
     complex_t* input_spectrum_data = new complex_t[SpectrumSize/2];
-    complex_t* feedback_spectrum_data = new complex_t[SpectrumSize/2];
     SpectralGen* spectral_generator = SpectralGen::create(sample_rate);
     return new Condolences(sample_rate, block_size,
       input_buffer_data, 
       input_window_data, 
       input_analyze_data,
       input_spectrum_data,
-      feedback_spectrum_data,
       spectral_generator
       );
   }
@@ -235,7 +223,6 @@ public:
     if (condolences)
     {
       SpectralGen::destroy(condolences->spectral_gen_);
-      delete[] condolences->feedback_spectrum_.data();
       delete[] condolences->input_spectrum_.data();
       delete[] condolences->input_analyze_.data();
       delete[] condolences->input_window_.data();
@@ -254,7 +241,6 @@ protected:
       case 3: return smear();
       case 4: return melt();
       case 5: return decay();
-      case 6: return feedback();
       default: return Parameter::none();
     }
   }
@@ -274,16 +260,12 @@ private:
   Smoother density_;
   Smoother spacing_;
   Smoother spread_;
-  Smoother spread_max_;
   Smoother smear_;
   Smoother melt_;
   Smoother decay_;
-  Smoother feedback_;
   Smoother volume_;
   
   analog_t sample_rate_;
-  analog_t density_min_;
-  analog_t density_max_;
   analog_t band_first_idx_;
   analog_t band_last_idx_;
   analog_t decay_min_;

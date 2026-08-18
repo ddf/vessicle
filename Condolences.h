@@ -45,7 +45,7 @@ DESCRIPTION:
 // The effect the SpectralSympathies generator is doing with spread is more like a "smear".
 
 template<typename T, size_t SpectrumSize>
-class Condolences : public vessl::unit_processor<T>, public vessl::plist<6>
+class Condolences : public vessl::unit_processor<T>, public vessl::plist<7>
 {
 public:
   using size_t = vessl::size_t;
@@ -95,6 +95,7 @@ public:
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
   [[nodiscard]] Parameter spacing() const { return params_.spacing("spacing", 's'); }
   [[nodiscard]] Parameter spread() const { return params_.spread("spread", 'r'); }
+  [[nodiscard]] Parameter smear() const { return params_.smear("smear", 'e'); }
   [[nodiscard]] Parameter melt() const { return params_.melt("melt", 'm'); }
   [[nodiscard]] Parameter decay() const { return params_.decay("decay", 'c'); }
   [[nodiscard]] Parameter feedback() const { return params_.feedback("feedback", 'f'); }
@@ -113,6 +114,7 @@ public:
     
     density_ = vessl::math::lerp(density_min_,  density_max_, params_.density.value);
     spacing_ = params_.spacing.value;
+    smear_ = params_.smear.value;
     spread_ = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
     spread_max_ = vessl::math::lerp(SpectrumSize/4.f, SpectrumSize/64.f, params_.density.value);
     decay_ = vessl::math::max(decay_min_, params_.decay.value);
@@ -123,8 +125,7 @@ public:
         0.2f*params_.decay.value
       + 0.2f*params_.spread.value);
     
-    //spectral_gen_->spread() = spread_.value;
-    //spectral_gen_->set_spread_bands_max(spread_max_.value);
+    spectral_gen_->spread() = smear_.value;
     spectral_gen_->decay() = vessl::duration_t::from_seconds(decay_.value, sample_rate_);
     spectral_gen_->melt() = melt_.value;
     spectral_gen_->volume() = volume_.value;
@@ -250,9 +251,10 @@ protected:
       case 0: return density();
       case 1: return spacing();
       case 2: return spread();
-      case 3: return melt();
-      case 4: return decay();
-      case 5: return feedback();
+      case 3: return smear();
+      case 4: return melt();
+      case 5: return decay();
+      case 6: return feedback();
       default: return Parameter::none();
     }
   }
@@ -263,6 +265,7 @@ private:
     vessl::analog_p density;
     vessl::analog_p spacing;
     vessl::analog_p spread;
+    vessl::analog_p smear;
     vessl::analog_p melt;
     vessl::analog_p decay;
     vessl::analog_p feedback;
@@ -272,6 +275,7 @@ private:
   Smoother spacing_;
   Smoother spread_;
   Smoother spread_max_;
+  Smoother smear_;
   Smoother melt_;
   Smoother decay_;
   Smoother feedback_;

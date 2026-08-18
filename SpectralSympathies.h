@@ -1,6 +1,7 @@
 #pragma once 
 
 #include "SpectralGenerator.h"
+#include "BlurKernel.h"
 #include "vessl/vessl.h"
 
 template<vessl::size_t SpectrumSize, bool LinearDecay = true>
@@ -8,17 +9,18 @@ class SpectralSympathies : public vessl::unit_generator<float>, vessl::plist<4>
 {
 public:
   using SpectralGen = SpectralGenerator<float, SpectrumSize>;
+  using band_t  = typename SpectralGen::frequency_band;
+
+  using Spectrum = vessl::array<band_t>;
   using SampleArray = vessl::array<float>;
   using Parameter = vessl::parameter;
   using size_t = vessl::size_t;
   using phase_t = vessl::phase_t;
-  using band_t  = typename SpectralGen::frequency_band;
   using complex_t = vessl::transform::complex<float>;
   
   // all data arrays should be at least bands_size long.
   SpectralSympathies(SpectralGen* spec_gen, float sample_rate)
     : sample_rate_(sample_rate)
-    , spread_bands_max_(SpectrumSize/8)
     , generator_(spec_gen)
     , overlap_size_(SpectrumSize/2)
     , overlap_size_half_(overlap_size_/2)
@@ -53,11 +55,6 @@ public:
     }
     return (accum / (SpectrumSize/2));
   }
-  
-  void set_spread_bands_max(float num_bands)
-  {
-    spread_bands_max_ = num_bands;
-  }
 
   VESSL_INLINE Parameter spread() const { return params_.spread("spread", 's'); }
   VESSL_INLINE Parameter decay() const { return params_.decay("decay", 'd'); }\
@@ -75,7 +72,7 @@ public:
       {
         band_t delta(ea, phase);
         delta.subtract(band);
-        delta.scale(0.9f);
+        delta.scale(0.1f);
         band.add(delta);
       }
     }
@@ -127,31 +124,24 @@ public:
   static void destroy(SpectralSympathies* synth)
   {
     SpectralGen::destroy(synth->generator_);
+    delete[] synth->spectrum_.data();
     delete synth;
   }
 
-private:
-  struct 
+protected:
+  vessl::parameter element_at(vessl::size_t index) const override
   {
-    vessl::duration_p decay;
-    vessl::analog_p   spread;
-    vessl::analog_p   melt;
-    vessl::analog_p   volume;
-  } params_;
-  
-  float sample_rate_;
-  float spread_bands_max_;
-  
-  // cache this so we only recalculate decay_dec_ when necessary.
-  float decay_seconds_;
-  float decay_dec_;
-  
-  SpectralGen* generator_;
-  
-  size_t overlap_size_;
-  size_t overlap_size_half_;
-  size_t overlap_size_mask_;
-  
+    switch (index)
+    {
+      case 0: return decay();
+      case 1: return spread();
+      case 2: return melt();
+      case 3: return volume();
+      default: return Parameter::none();
+    }
+  }
+
+private:
   void set_decay(const float in_seconds)
   {
     // having a shorter decay than the overlap size doesn't make sense
@@ -174,39 +164,7 @@ private:
   }
 
   VESSL_INLINE void fill_spectrum()
-  {
-    // constexpr float freq_mult = 1.0f;
-    //
-    // spec_bright_.fill(0);
-    // spec_spread_.fill(0);
-    //
-    // for (size_t i = 1; i < bands_.size(); ++i)
-    // {
-    //   process_band(i, bands_.size());
-    // }
-    //
-    // // spread the raw bright spectrum with a sort of filter than runs forwards and backwards.
-    // // adapted from ExponentialDecayEnvelope
-    // const float spread = params_.spread.value;
-    // float spread_mult = 1.0 + (vessl::math::log(0.00001f) - vessl::math::log(1.0f)) / (spread_bands_max_*spread + 12);
-    // spread_mult *= spread_mult;
-    // float pi = 0, pj = 0;
-    // const size_t count = spec_bright_.size();
-    // for (size_t i = 1; i < count; ++i)
-    // {
-    //   float ci = spec_bright_[i];
-    //   spec_spread_[i] += ci + pi;
-    //   pi = vessl::math::max(ci, pi)*spread_mult;
-    //
-    //   // we don't add in bright on the backwards pass
-    //   // because it gets added in the forward pass
-    //   size_t j = count - 1 - i;
-    //   float cj = spec_bright_[j];
-    //   spec_spread_[j] += pj;
-    //   pj = vessl::math::max(cj, pj)*spread_mult;
-    // }
-    
-    // @todo think I still need to spread
+  {    
     const float mlt = params_.melt.value;
     const size_t count = SpectrumSize/2;
     for (size_t i = 1; i < count; ++i)
@@ -224,6 +182,28 @@ private:
 
       // now apply normal decay to this band
       band.scale(decay_dec_);
+    }
+
+    const size_t smr = static_cast<size_t>(params_.spread.value*32) * 2;
+    if (smr > 0)
+    {
+      for (size_t i = 2 + smr; i < count/2 - smr; i++)
+      {
+        band_t& band = generator_->get_band(i);
+        
+        // "smear" the spectrum contents by blending nearby bands
+        const size_t li = i / smr;
+        const size_t hi = i * smr;
+        band_t lob = li > 0 ? generator_->get_band(li) : band_t();
+        band_t hib = hi < count ? generator_->get_band(hi) : band_t();
+
+        lob.scale(0.2f);
+        hib.scale(0.2f);
+        band.add(lob);
+        band.add(hib);
+        float mag = band.magnitude();
+        band.scale(mag > 0.8f ? 0.4f : 0.6f);
+      }
     }
   }
 
@@ -257,16 +237,26 @@ private:
   //   }
   // }
 
-protected:
-  vessl::parameter element_at(vessl::size_t index) const override
+  struct 
   {
-    switch (index)
-    {
-      case 0: return decay();
-      case 1: return spread();
-      case 2: return melt();
-      case 3: return volume();
-      default: return Parameter::none();
-    }
-  }
+    vessl::duration_p decay;
+    vessl::analog_p   spread;
+    vessl::analog_p   melt;
+    vessl::analog_p   volume;
+  } params_;
+  
+  float sample_rate_;
+  // cache this so we only recalculate decay_dec_ when necessary.
+  float decay_seconds_;
+  float decay_dec_;
+
+  // cached so we only recalc the kernel when needed
+  float smear_amount_;
+  
+  Spectrum     spectrum_;
+  SpectralGen* generator_;
+  
+  size_t overlap_size_;
+  size_t overlap_size_half_;
+  size_t overlap_size_mask_;
 };

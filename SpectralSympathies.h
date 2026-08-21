@@ -63,6 +63,21 @@ public:
   VESSL_INLINE Parameter melt() const { return params_.melt("melt", 'm'); }
   VESSL_INLINE Parameter volume() const { return params_.volume("volume", 'v'); }
 
+  VESSL_INLINE void excite(size_t bidx, complex_t in, float damping)
+  {
+    band_t& band = generator_->get_band(bidx);
+    //float band_mag = band.magnitude();
+    float in_mag = in.normalize();
+    //if (band_mag < 0.25f)
+    {
+      complex_t band_cmplx = band.to_complex();
+      complex_t delta = in - band_cmplx;
+      delta.scale(in_mag*damping);
+      band_cmplx.add(delta);
+      band.set_complex(band_cmplx);
+    }
+  }
+
   void excite(size_t bidx, float amp, phase_t phase)
   {
     //if (bidx > 1 && bidx < SpectrumSize/2)
@@ -108,11 +123,26 @@ public:
   
   VESSL_INLINE void generate(SampleArray output)
   {
-    auto w = output.make_writer();
-    while (w)
+    float decay_param = params_.decay.value.to_seconds(sample_rate_);
+    if (vessl::math::abs(decay_seconds_ - decay_param) > 0.001f)
     {
-      w << generate();
+      set_decay(decay_param);
     }
+
+    fill_spectrum();
+    if (phase_flip_)
+    {
+      generator_->template generate<true>(output);
+      phase_flip_ = false;
+    }
+    else
+    {
+      generator_->template generate<false>(output);
+      phase_flip_ = true;
+    }
+
+    const float volume = vessl::math::constrain(params_.volume.value, 0.f, 1.f);
+    output.scale(volume);
   }
 
   static SpectralSympathies* create(float sample_rate)
@@ -164,7 +194,7 @@ private:
 
   VESSL_INLINE void fill_spectrum()
   {    
-    const float mlt = params_.melt.value;
+    //const float mlt = params_.melt.value;
     const size_t count = SpectrumSize/2;
     for (size_t i = 1; i < count; ++i)
     {
@@ -172,12 +202,12 @@ private:
       
       // "melt" some of this band's energy into the band below,
       // wrapping around to the top of the spectrum if we are at the bottom.
-      const size_t mi = i == 1 ? count - 1 : i-1;
-      band_t& target = generator_->get_band(mi);
-      band_t  delt = band;
-      delt.scale(mlt);
-      band.scale(1.0f - mlt);
-      target.add(delt);
+      // const size_t mi = i == 1 ? count - 1 : i-1;
+      // band_t& target = generator_->get_band(mi);
+      // band_t  delt = band;
+      // delt.scale(mlt);
+      // band.scale(1.0f - mlt);
+      // target.add(delt);
 
       // now apply normal decay to this band
       band.scale(decay_dec_);
@@ -185,7 +215,7 @@ private:
 
     smear_lfo_phase_ += smear_lfo_step;
     float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_)*(smear_bands_max/2);
-    float smear_amt = params_.spread.value * 0.1f;
+    float smear_amt = params_.spread.value * 0.2f * (1.f / Overlap);
     const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
     if (smear_width > 0 && smear_amt > 0)
     {
@@ -225,4 +255,5 @@ private:
   phase_t smear_lfo_phase_;
 
   SpectralGen* generator_;
+  bool phase_flip_ = false;
 };

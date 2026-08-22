@@ -53,12 +53,13 @@ public:
   using FFT          = vessl::transform::fft<sample_t>;
   using Frequency    = vessl::frequency<analog_t>;
 
-  static constexpr size_t overlap_size = Sympathies::overlap_size;
-  static constexpr size_t generate_block_size = overlap_size;
-  static constexpr size_t spread_width = 2;
+  static constexpr size_t AnalysisSize = Sympathies::overlap_size;
+  static constexpr size_t StringCountMax = AnalysisSize/2;
+  static constexpr size_t GenerateBlockSize = AnalysisSize;
+  static constexpr size_t SpreadWidth = 2;
   // for clamping the param
-  static constexpr float density_min = 16;
-  static constexpr float density_max = static_cast<float>(SpectrumSize/2)/(spread_width*2);
+  static constexpr float DensityMin = 4;
+  static constexpr float DensityMax = static_cast<float>(AnalysisSize/2)/(SpreadWidth*2);
   
   Condolences(
     const analog_t sample_rate, 
@@ -70,16 +71,16 @@ public:
     Sympathies* spectral_generator
   )
   : sample_rate_(sample_rate)
-  , band_first_idx_(1.f + spread_width)
-  , band_last_idx_(static_cast<float>(SpectrumSize/2) - spread_width - 1)
-  , decay_min_(static_cast<float>(SpectrumSize) * 0.5f / sample_rate)
-  , input_buffer_write_(SpectrumSize - overlap_size)
-  , input_buffer_(input_buffer_data, SpectrumSize)
-  , input_window_(input_window_data, SpectrumSize)
-  , input_analyze_(input_analyze_data, SpectrumSize)
-  , input_spectrum_(input_spectrum_data, SpectrumSize/2)
-  , string_indices_(string_data, SpectrumSize/2)
-  , input_transform_(SpectrumSize)
+  , band_spacing_(sample_rate/AnalysisSize)
+  , band_first_idx_(1.f + SpreadWidth)
+  , band_last_idx_(static_cast<float>(AnalysisSize/2) - SpreadWidth - 1)
+  , decay_min_(static_cast<float>(SpectrumSize/2) / sample_rate)
+  , input_buffer_(input_buffer_data, AnalysisSize)
+  , input_window_(input_window_data, AnalysisSize)
+  , input_analyze_(input_analyze_data, AnalysisSize)
+  , input_spectrum_(input_spectrum_data, AnalysisSize/2)
+  , string_indices_(string_data, StringCountMax)
+  , input_fft_(AnalysisSize)
   , spectral_gen_(spectral_generator)
   {
     vessl::sample::windows::render(Window::hann, input_window_);
@@ -109,29 +110,15 @@ public:
   
   VESSL_INLINE void process(vessl::array<T> in, vessl::array<T> out) override
   {
-    const size_t block_size = in.size();
+    //const size_t block_size = in.size();
     
     smear_   = params_.smear.value;
     spread_  = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
     decay_   = vessl::math::max(decay_min_, params_.decay.value);
     melt_    = params_.melt.value;
 
-    density_ = vessl::math::constrain(params_.density.value, density_min, density_max);
+    density_ = vessl::math::constrain(params_.density.value, DensityMin, DensityMax);
     spacing_ = params_.spacing.value;
-    
-    const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 1ull);
-    {
-      uint16_t pbi = 0;
-      for (size_t si = 0; si < string_count; ++si)
-      {
-        const float st = static_cast<float>(si)/(string_count-1);
-        const float lin_bi = vessl::math::lerp(band_first_idx_, band_last_idx_, st);
-        const float log_bi = vessl::math::interp<vessl::math::easing::expo::in>(band_first_idx_, band_last_idx_, st);
-        const uint16_t cbi = static_cast<uint32_t>(vessl::math::lerp(log_bi, lin_bi, spacing_.value));
-        string_indices_[si] = cbi > pbi ? cbi : pbi+1;
-        pbi = string_indices_[si];
-      }
-    }
     
     // reduce volume based on combination of decay, spread, and brightness parameters
     // volume_ = vessl::math::interp<vessl::math::easing::expo::out>(1.0f, 0.5f, 
@@ -144,58 +131,54 @@ public:
     spectral_gen_->melt() = melt_.value;
     spectral_gen_->volume() = volume_.value;
 
-    SampleArray buffer(input_buffer_.data() + input_buffer_write_, block_size);
-    in.copy_to(buffer);
-    input_buffer_write_ += block_size;
+    in.copy_to(input_analyze_);
 
-    // input buffer size will be equal to overlap size
-    // and we start writing overlap size from the end of the buffer.
-    // so every block we can update our spectrum.
-    //if (input_buffer_write_ == SpectrumSize)
+
+    const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 1ull);
     {
       // window the input and output to an analysis buffer
       // because running the fft messes up the input samples.
-      input_window_.multiply(input_buffer_, input_analyze_);
-      input_transform_.forward(input_analyze_, input_spectrum_);
-      
-      // copy the back section of the array to the front section
-      // continue recording input from overlap_size before the end.
-      // doing this means we can update the spectral data for sound generation every overlap.
-      input_buffer_write_ = SpectrumSize - overlap_size;
-      SampleArray input_buffer_back(input_buffer_.data() + overlap_size, input_buffer_write_);
-      input_buffer_back.copy_to(input_buffer_);
+      input_window_.multiply(input_analyze_, input_analyze_);
+      input_fft_.forward(input_analyze_, input_spectrum_);
 
       // transfer spectrum data from input analysis to spectral_gen
       // by sampling only those frequencies represented by our strings.
       // i.e. comb filter it.
       size_t si = 0;
+      uint16_t pbi = 0;
       while(si < string_count)
       {
-        const size_t bi = string_indices_[si];
-        //if (bi >= band_first_idx_ && bi <= band_last_idx_)
-        {
-          float damping = 0.1f;
-          spectral_gen_->excite(bi, input_spectrum_[bi], damping);
+        const float st = static_cast<float>(si)/(string_count-1);
+        const size_t abi = static_cast<size_t>(
+          vessl::math::interp<vessl::math::easing::expo::in>(band_first_idx_, band_last_idx_, st)
+        );
 
-          //float in_mag = input.magnitude() * mag;
-          //vessl::phase_t in_phase = input.phase();
-          //spectral_gen_->excite(bi, in_mag, in_phase);
-          
-          //size_t si = 0;
-          //while(si++ < spread_width)
-          // hand unroll to hopefully speed this up
-          {
-            damping *= spread_.value;
-            spectral_gen_->excite(bi-1, input_spectrum_[bi-1], damping);
-            spectral_gen_->excite(bi+1, input_spectrum_[bi+1], damping);
-          }
-          {
-            damping *= spread_.value;
-            spectral_gen_->excite(bi-2, input_spectrum_[bi-2], damping);
-            spectral_gen_->excite(bi+2, input_spectrum_[bi+2], damping);
-          }
+        const size_t fbi = abi > pbi ? abi : pbi+1;
+        float damping = 0.25f;
+        // main string
+        {
+          const size_t tbi = spectral_gen_->get_band_index(fbi*band_spacing_); 
+          spectral_gen_->excite(tbi, input_spectrum_[fbi], damping);
         }
+
+        // spread strings
+        {
+          damping *= spread_.value;
+          const size_t tbi0 = f2t(fbi-1);
+          const size_t tbi1 = f2t(fbi+1);
+          spectral_gen_->excite(tbi0, input_spectrum_[fbi-1], damping);
+          spectral_gen_->excite(tbi1, input_spectrum_[fbi+1], damping);
+        }
+        {
+          damping *= spread_.value;
+          const size_t tbi0 = f2t(fbi-2);
+          const size_t tbi1 = f2t(fbi+2);
+          spectral_gen_->excite(tbi0, input_spectrum_[fbi-2], damping);
+          spectral_gen_->excite(tbi1, input_spectrum_[fbi+2], damping);
+        }
+
         ++si;
+        pbi = fbi;
       }
     }
 
@@ -211,11 +194,11 @@ public:
   
   static Condolences* create(vessl::analog_t sample_rate)
   {
-    sample_t* input_buffer_data = new sample_t[SpectrumSize];
-    sample_t* input_window_data = new sample_t[SpectrumSize];
-    sample_t* input_analyze_data = new sample_t[SpectrumSize];
-    complex_t* input_spectrum_data = new complex_t[SpectrumSize/2];
-    uint16_t*  string_data = new uint16_t[SpectrumSize/2];
+    sample_t* input_buffer_data = new sample_t[AnalysisSize];
+    sample_t* input_window_data = new sample_t[AnalysisSize];
+    sample_t* input_analyze_data = new sample_t[AnalysisSize];
+    complex_t* input_spectrum_data = new complex_t[AnalysisSize/2];
+    uint16_t*  string_data = new uint16_t[StringCountMax];
     Sympathies* spectral_generator = Sympathies::create(sample_rate);
     return new Condolences(sample_rate,
       input_buffer_data, 
@@ -256,6 +239,14 @@ protected:
   }
 
 private:
+  VESSL_INLINE size_t f2t(size_t fbi)
+  {
+    static constexpr float spectral_band_count = SpectrumSize/2;
+    const float tbi_log = spectral_gen_->get_band_index(fbi*band_spacing_) / spectral_band_count;
+    const float tbi_lin = vessl::math::interp<vessl::math::easing::expo::out>(0.f, 1.f, tbi_log);
+    return static_cast<size_t>(vessl::math::lerp(tbi_log, tbi_lin, spacing_.value) * spectral_band_count);
+  } 
+
   struct
   {
     vessl::analog_p density;
@@ -276,6 +267,7 @@ private:
   Smoother volume_;
   
   analog_t sample_rate_;
+  analog_t band_spacing_;
   analog_t band_first_idx_;
   analog_t band_last_idx_;
   analog_t decay_min_;
@@ -287,7 +279,7 @@ private:
   ComplexArray input_spectrum_;
   StringArray  string_indices_;
   
-  FFT input_transform_;
+  FFT input_fft_;
 
   Sympathies* spectral_gen_;
 };

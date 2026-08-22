@@ -57,8 +57,8 @@ public:
   static constexpr size_t generate_block_size = overlap_size;
   static constexpr size_t spread_width = 2;
   // for clamping the param
-  static constexpr float density_min = 4;
-  static constexpr float density_max = SpectrumSize/spread_width;
+  static constexpr float density_min = 16;
+  static constexpr float density_max = static_cast<float>(SpectrumSize/2)/(spread_width*2);
   
   Condolences(
     const analog_t sample_rate, 
@@ -119,20 +119,19 @@ public:
     density_ = vessl::math::constrain(params_.density.value, density_min, density_max);
     spacing_ = params_.spacing.value;
     
-    const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value + 0.5f), 1ull);
-    //if (string_count != string_count_ || vessl::math::abs(ps - spacing_.value) > 0.01f)
+    const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 1ull);
     {
       uint16_t pbi = 0;
       for (size_t si = 0; si < string_count; ++si)
       {
-        const float st = static_cast<float>(si)/string_count;
+        const float st = static_cast<float>(si)/(string_count-1);
         const float lin_bi = vessl::math::lerp(band_first_idx_, band_last_idx_, st);
-        const float exp_bi = vessl::math::interp<vessl::math::easing::expo::in>(band_first_idx_, band_last_idx_, st);
-        const float cbi = vessl::math::lerp(exp_bi, lin_bi, spacing_.value);
-        pbi = string_indices_[si] = cbi > pbi ? cbi : pbi+1;
+        const float log_bi = vessl::math::interp<vessl::math::easing::expo::in>(band_first_idx_, band_last_idx_, st);
+        const uint16_t cbi = static_cast<uint32_t>(vessl::math::lerp(log_bi, lin_bi, spacing_.value));
+        string_indices_[si] = cbi > pbi ? cbi : pbi+1;
+        pbi = string_indices_[si];
       }
     }
-    string_count_ = string_count;
     
     // reduce volume based on combination of decay, spread, and brightness parameters
     // volume_ = vessl::math::interp<vessl::math::easing::expo::out>(1.0f, 0.5f, 
@@ -149,7 +148,7 @@ public:
     in.copy_to(buffer);
     input_buffer_write_ += block_size;
 
-    // input buffer will be equal to overlap size
+    // input buffer size will be equal to overlap size
     // and we start writing overlap size from the end of the buffer.
     // so every block we can update our spectrum.
     //if (input_buffer_write_ == SpectrumSize)
@@ -173,7 +172,7 @@ public:
       while(si < string_count)
       {
         const size_t bi = string_indices_[si];
-        //if (bi > 0 && bi < iss)
+        //if (bi >= band_first_idx_ && bi <= band_last_idx_)
         {
           float damping = 0.1f;
           spectral_gen_->excite(bi, input_spectrum_[bi], damping);
@@ -287,8 +286,6 @@ private:
   SampleArray  input_analyze_;
   ComplexArray input_spectrum_;
   StringArray  string_indices_;
-  size_t       string_count_ = 0;
-  size_t       string_process_index_ = 0;
   
   FFT input_transform_;
 

@@ -19,7 +19,7 @@ public:
 
   static constexpr size_t overlap_size = (SpectrumSize/(Overlap*2));
   static constexpr size_t overlap_size_half = (overlap_size/2);
-  static constexpr size_t smear_bands_max = 16;
+  static constexpr size_t smear_bands_max = SpectrumSize/128;
   static constexpr phase_t smear_lfo_step = vessl::phase_180 / Overlap / smear_bands_max;
   
   SpectralSympathies(SpectralGen* spec_gen, float sample_rate)
@@ -194,20 +194,21 @@ private:
 
   VESSL_INLINE void fill_spectrum()
   {    
-    //const float mlt = params_.melt.value;
+    // @todo this also needs to scale down when decay and smear are both high.
+    const float mlt = params_.melt.value*0.75f;
     const size_t count = SpectrumSize/2;
     for (size_t i = 1; i < count; ++i)
     {
       band_t& band = generator_->get_band(i);
       
-      // "melt" some of this band's energy into the band below,
-      // wrapping around to the top of the spectrum if we are at the bottom.
-      // const size_t mi = i == 1 ? count - 1 : i-1;
-      // band_t& target = generator_->get_band(mi);
-      // band_t  delt = band;
-      // delt.scale(mlt);
-      // band.scale(1.0f - mlt);
-      // target.add(delt);
+      //"melt" some of this band's energy into the band below,
+      //wrapping around to the top of the spectrum if we are at the bottom.
+      const size_t mi = i == 1 ? count - 1 : i-1;
+      band_t& target = generator_->get_band(mi);
+      float bmag = band.magnitude();
+      float tmag = target.magnitude();
+      target.set_magnitude(tmag + bmag*mlt);
+      band.set_magnitude(bmag - bmag*mlt);
 
       // now apply normal decay to this band
       band.scale(decay_dec_);
@@ -215,7 +216,8 @@ private:
 
     smear_lfo_phase_ += smear_lfo_step;
     float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_)*(smear_bands_max/2);
-    float smear_amt = params_.spread.value * 0.2f * (1.f / Overlap);
+    // @todo this needs to scale based on length of decay
+    float smear_amt = params_.spread.value * 0.25f * (1.f / Overlap);
     const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
     if (smear_width > 0 && smear_amt > 0)
     {
@@ -233,8 +235,10 @@ private:
         hib.scale(smear_amt);
         band.add(lob);
         band.add(hib);
-        float mag = band.magnitude();
-        band.scale(mag > 0.8f ? 0.8f - smear_amt*2 : 1.0f - smear_amt*2);
+
+        // doing this nerfs the decay effect when smear is turned up.
+        //float mag = band.magnitude();
+        //band.scale(mag > 0.8f ? 0.8f - smear_amt*2 : 1.0f - smear_amt*2);
       }
     }
   }

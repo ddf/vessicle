@@ -62,12 +62,10 @@ public:
   static constexpr float DensityMax = static_cast<float>(AnalysisSize/2)/(SpreadWidth*2);
   
   Condolences(
-    const analog_t sample_rate, 
-    sample_t* input_buffer_data, 
+    const analog_t sample_rate,  
     sample_t* input_window_data,
     sample_t* input_analyze_data, 
     complex_t* input_spectrum_data,
-    uint16_t*    string_data, 
     Sympathies* spectral_generator
   )
   : sample_rate_(sample_rate)
@@ -75,16 +73,13 @@ public:
   , band_first_idx_(1.f + SpreadWidth)
   , band_last_idx_(static_cast<float>(AnalysisSize/2) - SpreadWidth - 1)
   , decay_min_(static_cast<float>(SpectrumSize/2) / sample_rate)
-  , input_buffer_(input_buffer_data, AnalysisSize)
   , input_window_(input_window_data, AnalysisSize)
   , input_analyze_(input_analyze_data, AnalysisSize)
   , input_spectrum_(input_spectrum_data, AnalysisSize/2)
-  , string_indices_(string_data, StringCountMax)
   , input_fft_(AnalysisSize)
   , spectral_gen_(spectral_generator)
   {
     vessl::sample::windows::render(Window::hann, input_window_);
-    input_buffer_.fill(vessl::cast<T>(0.f));
   }
 
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
@@ -131,13 +126,9 @@ public:
     spectral_gen_->melt() = melt_.value;
     spectral_gen_->volume() = volume_.value;
 
-    in.copy_to(input_analyze_);
-
-
     const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 1ull);
     {
-      // window the input and output to an analysis buffer
-      // because running the fft messes up the input samples.
+      in.copy_to(input_analyze_);
       input_window_.multiply(input_analyze_, input_analyze_);
       input_fft_.forward(input_analyze_, input_spectrum_);
 
@@ -194,18 +185,14 @@ public:
   
   static Condolences* create(vessl::analog_t sample_rate)
   {
-    sample_t* input_buffer_data = new sample_t[AnalysisSize];
     sample_t* input_window_data = new sample_t[AnalysisSize];
     sample_t* input_analyze_data = new sample_t[AnalysisSize];
     complex_t* input_spectrum_data = new complex_t[AnalysisSize/2];
-    uint16_t*  string_data = new uint16_t[StringCountMax];
     Sympathies* spectral_generator = Sympathies::create(sample_rate);
     return new Condolences(sample_rate,
-      input_buffer_data, 
       input_window_data, 
       input_analyze_data,
       input_spectrum_data,
-      string_data,
       spectral_generator
       );
   }
@@ -215,11 +202,9 @@ public:
     if (condolences)
     {
       Sympathies::destroy(condolences->spectral_gen_);
-      delete[] condolences->string_indices_.data();
       delete[] condolences->input_spectrum_.data();
       delete[] condolences->input_analyze_.data();
       delete[] condolences->input_window_.data();
-      delete[] condolences->input_buffer_.data();
     }
   }
   
@@ -272,8 +257,6 @@ private:
   analog_t band_last_idx_;
   analog_t decay_min_;
   
-  size_t input_buffer_write_;
-  SampleArray  input_buffer_;
   SampleArray  input_window_;
   SampleArray  input_analyze_;
   ComplexArray input_spectrum_;

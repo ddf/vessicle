@@ -19,10 +19,12 @@ class SpectralGenerator : public vessl::generators::spectral<T, SpectrumSize, Ov
 public:
   static SpectralGenerator* create(vessl::analog_t sample_rate, vessl::sample::windows::type window_type)
   {
+    // allocate sample_data first to increase the chances there is a block this big available
+    // when SpectrumSize and Overlap are relatively large.
+    SampleType* sample_data = new SampleType[SpectrumSize*Overlap*2];
     constexpr vessl::size_t bands_size = SpectrumSize/2;
     FrequencyBandType* bands_data = new FrequencyBandType[bands_size];
     ComplexType* spectrum_data = new ComplexType[bands_size];
-    SampleType* sample_data = new SampleType[SpectrumSize*Overlap*2];
     SampleType* window_data = new SampleType[SpectrumSize];
     Data data = {
       vessl::array<FrequencyBandType>(bands_data, bands_size), // bands

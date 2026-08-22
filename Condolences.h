@@ -30,8 +30,6 @@ DESCRIPTION:
 #include "SpectralSympathies.h"
 
 /** @todo
-  - expose spread_width as a parameter (integer like density)?
-  - try having excite move towards the source spectrum value (pass in actual complex number)
   - revisit volume adjustment formula
 */
 
@@ -185,10 +183,11 @@ public:
   
   static Condolences* create(vessl::analog_t sample_rate)
   {
+    // allocate the generator first because it needs the largest contiguous block of memory
+    Sympathies* spectral_generator = Sympathies::create(sample_rate);
     sample_t* input_window_data = new sample_t[AnalysisSize];
     sample_t* input_analyze_data = new sample_t[AnalysisSize];
     complex_t* input_spectrum_data = new complex_t[AnalysisSize/2];
-    Sympathies* spectral_generator = Sympathies::create(sample_rate);
     return new Condolences(sample_rate,
       input_window_data, 
       input_analyze_data,
@@ -260,7 +259,6 @@ private:
   SampleArray  input_window_;
   SampleArray  input_analyze_;
   ComplexArray input_spectrum_;
-  StringArray  string_indices_;
   
   FFT input_fft_;
 

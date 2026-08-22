@@ -124,7 +124,7 @@ public:
     // volume_ = vessl::math::interp<vessl::math::easing::expo::out>(1.0f, 0.5f, 
     //     0.2f*params_.decay.value
     //   + 0.2f*params_.spread.value);
-    volume_ = 0.5f;
+    volume_ = 0.25f;
     
     spectral_gen_->spread() = smear_.value;
     spectral_gen_->decay() = vessl::duration_t::from_seconds(decay_.value, sample_rate_);
@@ -154,7 +154,7 @@ public:
         );
 
         const size_t fbi = abi > pbi ? abi : pbi+1;
-        float damping = 0.25f;
+        float damping = 0.9f;
         // main string
         {
           const size_t tbi = spectral_gen_->get_band_index(fbi*band_spacing_); 

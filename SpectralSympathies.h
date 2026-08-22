@@ -201,13 +201,11 @@ private:
     {
       band_t& band = generator_->get_band(i);
       
-      //"melt" some of this band's energy into the band below,
-      //wrapping around to the top of the spectrum if we are at the bottom.
+      //"melt" some of this band's energy into the band below.
       const size_t mi = i == 1 ? count - 1 : i-1;
       band_t& target = generator_->get_band(mi);
       float bmag = band.magnitude();
-      float tmag = target.magnitude();
-      target.set_magnitude(tmag + bmag*mlt);
+      target.set_magnitude(target.magnitude() + bmag*mlt);
       band.set_magnitude(bmag - bmag*mlt);
 
       // now apply normal decay to this band
@@ -216,8 +214,8 @@ private:
 
     smear_lfo_phase_ += smear_lfo_step;
     float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_)*(smear_bands_max/2);
-    // @todo this needs to scale based on length of decay
-    float smear_amt = params_.spread.value * 0.25f * (1.f / Overlap);
+    float smear_scale = vessl::math::interp<vessl::math::easing::expo::out>(8.0f, 0.125f, decay_dec_);
+    float smear_amt = params_.spread.value * smear_scale * (1.f / Overlap);
     const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
     if (smear_width > 0 && smear_amt > 0)
     {

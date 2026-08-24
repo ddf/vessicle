@@ -194,7 +194,6 @@ private:
 
   VESSL_INLINE void fill_spectrum()
   {    
-    // @todo this also needs to scale down when decay and smear are both high.
     const float mlt = params_.melt.value*0.75f;
     const size_t count = SpectrumSize/2;
     for (size_t i = 1; i < count; ++i)

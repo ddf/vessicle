@@ -34,7 +34,7 @@ DESCRIPTION:
 */
 
 template<typename T, uint16_t SpectrumSize, uint8_t Overlap>
-class Condolences : public vessl::unit_processor<T>, public vessl::plist<6>
+class Condolences : public vessl::unit_processor<T>, public vessl::plist<7>
 {
 public:
   using sample_t     = T;
@@ -78,6 +78,7 @@ public:
   , spectral_gen_(spectral_generator)
   {
     vessl::sample::windows::render(Window::hann, input_window_);
+    params_.damping.value = 0.5f;
   }
 
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
@@ -86,6 +87,7 @@ public:
   [[nodiscard]] Parameter smear() const { return params_.smear("smear", 'e'); }
   [[nodiscard]] Parameter melt() const { return params_.melt("melt", 'm'); }
   [[nodiscard]] Parameter decay() const { return params_.decay("decay", 'c'); }
+  [[nodiscard]] Parameter damping() const { return params_.damping("damping", 'p'); }
   
   [[nodiscard]] const parameter_list& parameters() const override { return *this; }
 
@@ -109,6 +111,7 @@ public:
     spread_  = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
     decay_   = vessl::math::max(decay_min_, params_.decay.value);
     melt_    = params_.melt.value;
+    damping_ = params_.damping.value;
 
     density_ = vessl::math::constrain(params_.density.value, DensityMin, DensityMax);
     spacing_ = params_.spacing.value;
@@ -143,7 +146,7 @@ public:
         );
 
         const size_t fbi = abi > pbi ? abi : pbi+1;
-        float damping = 0.9f;
+        float damping = damping_.value;
         // main string
         {
           const size_t tbi = spectral_gen_->get_band_index(fbi*band_spacing_); 
@@ -218,6 +221,7 @@ protected:
       case 3: return smear();
       case 4: return melt();
       case 5: return decay();
+      case 6: return damping();
       default: return Parameter::none();
     }
   }
@@ -239,7 +243,7 @@ private:
     vessl::analog_p smear;
     vessl::analog_p melt;
     vessl::analog_p decay;
-    vessl::analog_p feedback;
+    vessl::analog_p damping;
   } params_;
   
   Smoother density_;
@@ -248,6 +252,7 @@ private:
   Smoother smear_;
   Smoother melt_;
   Smoother decay_;
+  Smoother damping_;
   Smoother volume_;
   
   analog_t sample_rate_;

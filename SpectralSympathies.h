@@ -1,3 +1,7 @@
+/**
+ * Copyright 2026 Damien Quartz
+ */
+
 #pragma once 
 
 #include "SpectralGenerator.h"

@@ -19,18 +19,17 @@ public:
 
   static SpectralGenerator* create(vessl::analog_t sample_rate, vessl::sample::windows::type window_type)
   {
-    // allocate sample_data first to increase the chances there is a block this big available
-    // when SpectrumSize and Overlap are relatively large.
-    SampleType* sample_data = new SampleType[SpectrumSize*Overlap*2];
     constexpr vessl::size_t bands_size = SpectrumSize/2;
     FrequencyBandType* bands_data = new FrequencyBandType[bands_size];
     ComplexType* spectrum_data = new ComplexType[bands_size];
     SampleType* window_data = new SampleType[SpectrumSize];
+    SampleType* sample_data = new SampleType[SpectrumSize*2];
     Data data = {
       vessl::array<FrequencyBandType>(bands_data, bands_size), // bands
       vessl::array<ComplexType>(spectrum_data, bands_size), // spectrum
-      vessl::array<SampleType>(sample_data, SpectrumSize*Overlap*2), // signal
+      vessl::array<SampleType>(sample_data, SpectrumSize), // signal
       vessl::array<SampleType>(window_data, SpectrumSize), // window
+      vessl::array<SampleType>(sample_data+SpectrumSize, SpectrumSize) // output
     };
     
     vessl::sample::windows::render(window_type, data.window);
@@ -43,10 +42,10 @@ public:
     if (generator)
     {
       delete[] generator->window_.data();
-      delete[] generator->signal_[0].data();
-      // shouldn't need to delete b because it was allocated along with a in create.
+      delete[] generator->signal_.data();
       delete[] generator->spectrum_.data();
       delete[] generator->bands_.data();
+      // we don't delete output_ because it was allocated in a block with signal_
     }
     delete generator;
   }

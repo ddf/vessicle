@@ -53,7 +53,7 @@ public:
 
   static constexpr size_t AnalysisSize = Sympathies::overlap_size;
   static constexpr size_t StringCountMax = AnalysisSize/2;
-  static constexpr size_t GenerateBlockSize = AnalysisSize;
+  static constexpr size_t GenerateBlockSize = Sympathies::overlap_size;
   static constexpr size_t SpreadWidth = 2;
   // for clamping the param
   static constexpr float DensityMin = 4;
@@ -62,6 +62,7 @@ public:
   Condolences(
     const analog_t sample_rate,  
     sample_t* input_window_data,
+    sample_t* input_buffer_data,
     sample_t* input_analyze_data, 
     complex_t* input_spectrum_data,
     Sympathies* spectral_generator
@@ -77,8 +78,8 @@ public:
   , input_fft_(AnalysisSize)
   , spectral_gen_(spectral_generator)
   {
-    vessl::sample::windows::render(Window::hann, input_window_);
     params_.response.value = 0.45f;
+    input_buffer_.fill(0);
   }
 
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
@@ -129,8 +130,20 @@ public:
 
     const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 1ull);
     {
-      in.copy_to(input_analyze_);
-      input_window_.multiply(input_analyze_, input_analyze_);
+      if constexpr (AnalysisSize == GenerateBlockSize)
+      {
+        input_window_.multiply(in, input_analyze_);
+      }
+      else
+      {
+        SampleArray buff_front(input_buffer_.data(), GenerateBlockSize);
+        SampleArray buff_back(input_buffer_.data() + GenerateBlockSize, GenerateBlockSize);
+        buff_back.copy_to(buff_front);
+        in.copy_to(buff_back);
+
+        input_window_.multiply(input_buffer_, input_analyze_);
+      }
+
       input_fft_.forward(input_analyze_, input_spectrum_);
 
       // transfer spectrum data from input analysis to spectral_gen
@@ -182,15 +195,20 @@ public:
     return spectral_gen_->get_band(freq_in_hz);
   }
   
-  static Condolences* create(vessl::analog_t sample_rate)
+  static Condolences* create(vessl::analog_t sample_rate, Window input_window_type = Window::hann)
   {
     // allocate the generator first because it needs the largest contiguous block of memory
     Sympathies* spectral_generator  = Sympathies::create(sample_rate);
     sample_t*   input_window_data   = new sample_t[AnalysisSize];
+    sample_t*   input_buffer_data   = new sample_t[AnalysisSize];
     sample_t*   input_analyze_data  = new sample_t[AnalysisSize];
     complex_t*  input_spectrum_data = new complex_t[AnalysisSize/2];
+    
+    vessl::sample::windows::render(input_window_type, input_window_data, AnalysisSize);
+    
     return new Condolences(sample_rate,
-      input_window_data, 
+      input_window_data,
+      input_buffer_data, 
       input_analyze_data,
       input_spectrum_data,
       spectral_generator
@@ -204,6 +222,7 @@ public:
       Sympathies::destroy(condolences->spectral_gen_);
       delete[] condolences->input_spectrum_.data();
       delete[] condolences->input_analyze_.data();
+      delete[] condolences->input_buffer_.data();
       delete[] condolences->input_window_.data();
     }
   }
@@ -281,6 +300,7 @@ private:
   analog_t decay_min_;
   
   SampleArray  input_window_;
+  SampleArray  input_buffer_;
   SampleArray  input_analyze_;
   ComplexArray input_spectrum_;
   

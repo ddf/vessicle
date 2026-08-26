@@ -11,12 +11,12 @@ class SpectralGenerator : public vessl::generators::spectral<T, SpectrumSize, Ov
   using SampleType = typename vessl::generators::spectral<T, SpectrumSize, Overlap>::sample_t;
   using ComplexType = typename vessl::generators::spectral<T, SpectrumSize, Overlap>::complex_t;
   
+public:  
   SpectralGenerator(Data& data, vessl::analog_t sample_rate)
     : vessl::generators::spectral<T, SpectrumSize, Overlap>(data, sample_rate)
   {
   }
-  
-public:
+
   static SpectralGenerator* create(vessl::analog_t sample_rate, vessl::sample::windows::type window_type)
   {
     // allocate sample_data first to increase the chances there is a block this big available

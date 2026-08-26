@@ -43,7 +43,7 @@ public:
   using complex_t    = vessl::transform::complex<sample_t>;
   using Smoother     = vessl::math::easing::smoother<vessl::analog_t>;
   using Parameter    = vessl::parameter;
-  using Sympathies   = SpectralSympathies<SpectrumSize, Overlap, false>;
+  using Sympathies   = SpectralSympathies<SpectrumSize, Overlap>;
   using SampleArray  = vessl::array<sample_t>;
   using ComplexArray = vessl::array<complex_t>;
   using StringArray  = vessl::array<uint16_t>;
@@ -70,7 +70,7 @@ public:
   , band_spacing_(sample_rate/AnalysisSize)
   , band_first_idx_(1.f + SpreadWidth)
   , band_last_idx_(static_cast<float>(AnalysisSize/2) - SpreadWidth - 1)
-  , decay_min_(static_cast<float>(SpectrumSize/2) / sample_rate)
+  , decay_min_(static_cast<float>(Sympathies::overlap_size) / sample_rate)
   , input_window_(input_window_data, AnalysisSize)
   , input_analyze_(input_analyze_data, AnalysisSize)
   , input_spectrum_(input_spectrum_data, AnalysisSize/2)
@@ -78,7 +78,7 @@ public:
   , spectral_gen_(spectral_generator)
   {
     vessl::sample::windows::render(Window::hann, input_window_);
-    params_.damping.value = 0.5f;
+    params_.response.value = 0.45f;
   }
 
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
@@ -86,8 +86,8 @@ public:
   [[nodiscard]] Parameter spread() const { return params_.spread("spread", 'r'); }
   [[nodiscard]] Parameter smear() const { return params_.smear("smear", 'e'); }
   [[nodiscard]] Parameter melt() const { return params_.melt("melt", 'm'); }
+  [[nodiscard]] Parameter sensitivity() const { return params_.response("sensitivity", 't'); }
   [[nodiscard]] Parameter decay() const { return params_.decay("decay", 'c'); }
-  [[nodiscard]] Parameter damping() const { return params_.damping("damping", 'p'); }
   
   [[nodiscard]] const parameter_list& parameters() const override { return *this; }
 
@@ -107,11 +107,11 @@ public:
   {
     //const size_t block_size = in.size();
     
-    smear_   = params_.smear.value;
-    spread_  = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
-    decay_   = vessl::math::max(decay_min_, params_.decay.value);
-    melt_    = params_.melt.value;
-    damping_ = params_.damping.value;
+    smear_    = params_.smear.value;
+    spread_   = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
+    response_ = params_.response.value;
+    melt_     = params_.melt.value;
+    damping_  = get_damping(params_.decay.value, 0.f);
 
     density_ = vessl::math::constrain(params_.density.value, DensityMin, DensityMax);
     spacing_ = params_.spacing.value;
@@ -123,7 +123,7 @@ public:
     volume_ = 0.25f;
     
     spectral_gen_->spread() = smear_.value;
-    spectral_gen_->decay() = vessl::duration_t::from_seconds(decay_.value, sample_rate_);
+    spectral_gen_->damping() = damping_.value;
     spectral_gen_->melt() = melt_.value;
     spectral_gen_->volume() = volume_.value;
 
@@ -146,27 +146,27 @@ public:
         );
 
         const size_t fbi = abi > pbi ? abi : pbi+1;
-        float damping = damping_.value;
+        float response = response_.value;
         // main string
         {
           const size_t tbi = spectral_gen_->get_band_index(fbi*band_spacing_); 
-          spectral_gen_->excite(tbi, input_spectrum_[fbi], damping);
+          spectral_gen_->excite(tbi, input_spectrum_[fbi], response);
         }
 
         // spread strings
         {
-          damping *= spread_.value;
+          response *= spread_.value;
           const size_t tbi0 = f2t(fbi-1);
           const size_t tbi1 = f2t(fbi+1);
-          spectral_gen_->excite(tbi0, input_spectrum_[fbi-1], damping);
-          spectral_gen_->excite(tbi1, input_spectrum_[fbi+1], damping);
+          spectral_gen_->excite(tbi0, input_spectrum_[fbi-1], response);
+          spectral_gen_->excite(tbi1, input_spectrum_[fbi+1], response);
         }
         {
-          damping *= spread_.value;
+          response *= spread_.value;
           const size_t tbi0 = f2t(fbi-2);
           const size_t tbi1 = f2t(fbi+2);
-          spectral_gen_->excite(tbi0, input_spectrum_[fbi-2], damping);
-          spectral_gen_->excite(tbi1, input_spectrum_[fbi+2], damping);
+          spectral_gen_->excite(tbi0, input_spectrum_[fbi-2], response);
+          spectral_gen_->excite(tbi1, input_spectrum_[fbi+2], response);
         }
 
         ++si;
@@ -176,8 +176,6 @@ public:
 
     spectral_gen_->generate(out);
   }
-
-  VESSL_INLINE analog_t get_decay_min() const { return decay_min_; };
   
   VESSL_INLINE typename Sympathies::band_t get_band(analog_t freq_in_hz) const
   {
@@ -187,10 +185,10 @@ public:
   static Condolences* create(vessl::analog_t sample_rate)
   {
     // allocate the generator first because it needs the largest contiguous block of memory
-    Sympathies* spectral_generator = Sympathies::create(sample_rate);
-    sample_t* input_window_data = new sample_t[AnalysisSize];
-    sample_t* input_analyze_data = new sample_t[AnalysisSize];
-    complex_t* input_spectrum_data = new complex_t[AnalysisSize/2];
+    Sympathies* spectral_generator  = Sympathies::create(sample_rate);
+    sample_t*   input_window_data   = new sample_t[AnalysisSize];
+    sample_t*   input_analyze_data  = new sample_t[AnalysisSize];
+    complex_t*  input_spectrum_data = new complex_t[AnalysisSize/2];
     return new Condolences(sample_rate,
       input_window_data, 
       input_analyze_data,
@@ -220,13 +218,34 @@ protected:
       case 2: return spread();
       case 3: return smear();
       case 4: return melt();
-      case 5: return decay();
-      case 6: return damping();
+      case 5: return sensitivity();
+      case 6: return decay();
       default: return Parameter::none();
     }
   }
 
 private:
+  VESSL_INLINE float get_damping(float in_seconds, const float exp_lin_lerp)
+  {
+    static constexpr float overlap_size = static_cast<float>(Sympathies::overlap_size);
+
+    // having a shorter decay than the overlap size doesn't make sense
+    // and we also want to avoid divide-by-zero.
+    in_seconds = vessl::math::max(decay_min_, in_seconds);
+
+    // amplitude needs to decrease by 1 / (decaySeconds * sampleRate()) every sample.
+    // eg decaySeconds == 1 -> 1 / sampleRate()
+    //    decaySeconds == 0.5 -> 1 / (0.5 * sampleRate), which is twice as fast, equivalent to 2 / sampleRate()
+    // since we generate a new buffer every overlapSize samples, we multiply that rate by overlapSize, giving:
+    const float damp_lin = overlap_size / (in_seconds * sample_rate_);
+
+    // exponential decay
+    const float block_rate = sample_rate_ / overlap_size;
+    const float length_in_blocks = in_seconds * block_rate;
+    const float damp_exp = 1.0 + vessl::math::log(0.0001f) / (length_in_blocks + 20);
+    return vessl::math::lerp(damp_exp, damp_lin, exp_lin_lerp);
+  }
+
   VESSL_INLINE size_t f2t(size_t fbi)
   {
     static constexpr float spectral_band_count = SpectrumSize/2;
@@ -242,8 +261,8 @@ private:
     vessl::analog_p spread;
     vessl::analog_p smear;
     vessl::analog_p melt;
+    vessl::analog_p response;
     vessl::analog_p decay;
-    vessl::analog_p damping;
   } params_;
   
   Smoother density_;
@@ -251,8 +270,8 @@ private:
   Smoother spread_;
   Smoother smear_;
   Smoother melt_;
-  Smoother decay_;
   Smoother damping_;
+  Smoother response_;
   Smoother volume_;
   
   analog_t sample_rate_;

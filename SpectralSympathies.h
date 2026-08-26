@@ -4,7 +4,7 @@
 #include "BlurKernel.h"
 #include "vessl/vessl.h"
 
-template<vessl::size_t SpectrumSize, vessl::size_t Overlap = 1, bool LinearDecay = true>
+template<vessl::size_t SpectrumSize, vessl::size_t Overlap = 1>
 class SpectralSympathies : public vessl::unit_generator<float>, vessl::plist<4>
 {
 public:
@@ -28,8 +28,7 @@ public:
     , generator_(spec_gen)
   {
     params_.volume.value = 1.0f;
-    params_.decay.value = vessl::duration_t::from_seconds(1.0f, sample_rate);
-    set_decay(1.0f);
+    params_.damping.value = 0.9f;
   }
       
   VESSL_INLINE size_t get_band_index(float frequency)
@@ -59,11 +58,11 @@ public:
   }
 
   VESSL_INLINE Parameter spread() const { return params_.spread("spread", 's'); }
-  VESSL_INLINE Parameter decay() const { return params_.decay("decay", 'd'); }\
+  VESSL_INLINE Parameter damping() const { return params_.damping("damping", 'd'); }
   VESSL_INLINE Parameter melt() const { return params_.melt("melt", 'm'); }
   VESSL_INLINE Parameter volume() const { return params_.volume("volume", 'v'); }
 
-  VESSL_INLINE void excite(size_t bidx, complex_t in, float damping)
+  VESSL_INLINE void excite(size_t bidx, complex_t in, float response)
   {
     band_t& band = generator_->get_band(bidx);
     //float band_mag = band.magnitude();
@@ -72,7 +71,7 @@ public:
     {
       complex_t band_cmplx = band.to_complex();
       complex_t delta = in - band_cmplx;
-      delta.scale(in_mag*damping);
+      delta.scale(in_mag*response);
       band_cmplx.add(delta);
       band.set_complex(band_cmplx);
     }
@@ -105,12 +104,6 @@ public:
   
   VESSL_INLINE float generate() override
   {
-    float decay_param = params_.decay.value.to_seconds(sample_rate_);
-    if (vessl::math::abs(decay_seconds_ - decay_param) > 0.001f)
-    {
-      set_decay(decay_param);
-    }
-    
     // apply decay to the spectrum between overlaps.
     if (generator_->get_overlap_count() == overlap_size_half)
     {
@@ -123,12 +116,6 @@ public:
   
   VESSL_INLINE void generate(SampleArray output)
   {
-    float decay_param = params_.decay.value.to_seconds(sample_rate_);
-    if (vessl::math::abs(decay_seconds_ - decay_param) > 0.001f)
-    {
-      set_decay(decay_param);
-    }
-
     fill_spectrum();
     if (phase_flip_)
     {
@@ -162,7 +149,7 @@ protected:
   {
     switch (index)
     {
-      case 0: return decay();
+      case 0: return damping();
       case 1: return spread();
       case 2: return melt();
       case 3: return volume();
@@ -171,30 +158,10 @@ protected:
   }
 
 private:
-  void set_decay(const float in_seconds)
-  {
-    // having a shorter decay than the overlap size doesn't make sense
-    // and we also want to avoid divide-by-zero.
-    decay_seconds_ = vessl::math::max(overlap_size / sample_rate_, in_seconds);
-    if constexpr (LinearDecay)
-    {
-      // amplitude needs to decrease by 1 / (decaySeconds * sampleRate()) every sample.
-      // eg decaySeconds == 1 -> 1 / sampleRate()
-      //    decaySeconds == 0.5 -> 1 / (0.5 * sampleRate), which is twice as fast, equivalent to 2 / sampleRate()
-      // since we generate a new buffer every overlapSize samples, we multiply that rate by overlapSize, giving:
-      decay_dec_ = overlap_size / (decay_seconds_ * sample_rate_);
-    }
-    else // exponential decay
-    {
-      float block_rate = sample_rate_ / overlap_size;
-      float length_in_blocks = decay_seconds_ * block_rate;
-      decay_dec_ = 1.0 + vessl::math::log(0.0001f) / (length_in_blocks + 20);
-    }
-  }
-
   VESSL_INLINE void fill_spectrum()
   {    
     const float mlt = params_.melt.value*0.75f;
+    const float dmp = params_.damping.value;
     const size_t count = SpectrumSize/2;
     for (size_t i = 1; i < count; ++i)
     {
@@ -208,12 +175,12 @@ private:
       band.set_magnitude(bmag - bmag*mlt);
 
       // now apply normal decay to this band
-      band.scale(decay_dec_);
+      band.scale(dmp);
     }
 
     smear_lfo_phase_ += smear_lfo_step;
     float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_)*(smear_bands_max/2);
-    float smear_scale = vessl::math::interp<vessl::math::easing::expo::out>(8.0f, 0.125f, decay_dec_);
+    float smear_scale = vessl::math::interp<vessl::math::easing::expo::out>(8.0f, 0.125f, dmp);
     float smear_amt = params_.spread.value * smear_scale * (1.f / Overlap);
     const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
     if (smear_width > 0 && smear_amt > 0)
@@ -242,16 +209,13 @@ private:
 
   struct 
   {
-    vessl::duration_p decay;
-    vessl::analog_p   spread;
-    vessl::analog_p   melt;
-    vessl::analog_p   volume;
+    vessl::analog_p damping;
+    vessl::analog_p spread;
+    vessl::analog_p melt;
+    vessl::analog_p volume;
   } params_;
   
   float sample_rate_;
-  // cache this so we only recalculate decay_dec_ when necessary.
-  float decay_seconds_;
-  float decay_dec_;
   SmearLfo smear_lfo_;
   phase_t smear_lfo_phase_;
 

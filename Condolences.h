@@ -53,7 +53,6 @@ public:
 
   static constexpr size_t AnalysisSize = Sympathies::overlap_size;
   static constexpr size_t StringCountMax = AnalysisSize/2;
-  static constexpr size_t GenerateBlockSize = Sympathies::overlap_size;
   static constexpr size_t SpreadWidth = 2;
   // for clamping the param
   static constexpr float DensityMin = 4;
@@ -63,7 +62,6 @@ public:
     const analog_t sample_rate,  
     sample_t* input_window_data,
     sample_t* input_buffer_data,
-    sample_t* input_analyze_data, 
     complex_t* input_spectrum_data,
     Sympathies* spectral_generator
   )
@@ -73,12 +71,13 @@ public:
   , band_last_idx_(static_cast<float>(AnalysisSize/2) - SpreadWidth - 1)
   , decay_min_(static_cast<float>(Sympathies::overlap_size) / sample_rate)
   , input_window_(input_window_data, AnalysisSize)
-  , input_analyze_(input_analyze_data, AnalysisSize)
+  , input_buffer_(input_buffer_data, AnalysisSize)
   , input_spectrum_(input_spectrum_data, AnalysisSize/2)
   , input_fft_(AnalysisSize)
   , spectral_gen_(spectral_generator)
+  , input_buffer_write_idx_(0)
   {
-    params_.response.value = 0.45f;
+    params_.response.value = 0.1f;
     input_buffer_.fill(0);
   }
 
@@ -106,7 +105,7 @@ public:
   
   VESSL_INLINE void process(vessl::array<T> in, vessl::array<T> out) override
   {
-    //const size_t block_size = in.size();
+    const size_t block_size = in.size();
     
     smear_    = params_.smear.value;
     spread_   = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
@@ -129,65 +128,60 @@ public:
     spectral_gen_->volume() = volume_.value;
 
     const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 1ull);
+    for(size_t i = 0; i < block_size; ++i)
     {
-      if constexpr (AnalysisSize == GenerateBlockSize)
+      out[i] = input_buffer_[input_buffer_write_idx_];
+      input_buffer_[input_buffer_write_idx_] = in[i]*input_window_[input_buffer_write_idx_];
+      ++input_buffer_write_idx_;
+
+      if (input_buffer_write_idx_ == AnalysisSize)
       {
-        input_window_.multiply(in, input_analyze_);
-      }
-      else
-      {
-        SampleArray buff_front(input_buffer_.data(), GenerateBlockSize);
-        SampleArray buff_back(input_buffer_.data() + GenerateBlockSize, GenerateBlockSize);
-        buff_back.copy_to(buff_front);
-        in.copy_to(buff_back);
+        input_fft_.forward(input_buffer_, input_spectrum_);
 
-        input_window_.multiply(input_buffer_, input_analyze_);
-      }
-
-      input_fft_.forward(input_analyze_, input_spectrum_);
-
-      // transfer spectrum data from input analysis to spectral_gen
-      // by sampling only those frequencies represented by our strings.
-      // i.e. comb filter it.
-      size_t si = 0;
-      uint16_t pbi = 0;
-      while(si < string_count)
-      {
-        const float st = static_cast<float>(si)/(string_count-1);
-        const size_t abi = static_cast<size_t>(
-          vessl::math::interp<vessl::math::easing::expo::in>(band_first_idx_, band_last_idx_, st)
-        );
-
-        const size_t fbi = abi > pbi ? abi : pbi+1;
-        float response = response_.value;
-        // main string
+        // transfer spectrum data from input analysis to spectral_gen
+        // by sampling only those frequencies represented by our strings.
+        // i.e. comb filter it.
+        size_t si = 0;
+        uint16_t pbi = 0;
+        while(si < string_count)
         {
-          const size_t tbi = spectral_gen_->get_band_index(fbi*band_spacing_); 
-          spectral_gen_->excite(tbi, input_spectrum_[fbi], response);
+          const float st = static_cast<float>(si)/(string_count-1);
+          const size_t abi = static_cast<size_t>(
+            vessl::math::interp<vessl::math::easing::expo::in>(band_first_idx_, band_last_idx_, st)
+          );
+
+          const size_t fbi = abi > pbi ? abi : pbi+1;
+          float response = response_.value;
+          // main string
+          {
+            const size_t tbi = spectral_gen_->get_band_index(fbi*band_spacing_); 
+            spectral_gen_->excite(tbi, input_spectrum_[fbi], response);
+          }
+
+          // spread strings
+          {
+            response *= spread_.value;
+            const size_t tbi0 = f2t(fbi-1);
+            const size_t tbi1 = f2t(fbi+1);
+            spectral_gen_->excite(tbi0, input_spectrum_[fbi-1], response);
+            spectral_gen_->excite(tbi1, input_spectrum_[fbi+1], response);
+          }
+          {
+            response *= spread_.value;
+            const size_t tbi0 = f2t(fbi-2);
+            const size_t tbi1 = f2t(fbi+2);
+            spectral_gen_->excite(tbi0, input_spectrum_[fbi-2], response);
+            spectral_gen_->excite(tbi1, input_spectrum_[fbi+2], response);
+          }
+
+          ++si;
+          pbi = fbi;
         }
 
-        // spread strings
-        {
-          response *= spread_.value;
-          const size_t tbi0 = f2t(fbi-1);
-          const size_t tbi1 = f2t(fbi+1);
-          spectral_gen_->excite(tbi0, input_spectrum_[fbi-1], response);
-          spectral_gen_->excite(tbi1, input_spectrum_[fbi+1], response);
-        }
-        {
-          response *= spread_.value;
-          const size_t tbi0 = f2t(fbi-2);
-          const size_t tbi1 = f2t(fbi+2);
-          spectral_gen_->excite(tbi0, input_spectrum_[fbi-2], response);
-          spectral_gen_->excite(tbi1, input_spectrum_[fbi+2], response);
-        }
-
-        ++si;
-        pbi = fbi;
+        spectral_gen_->generate(input_buffer_);
+        input_buffer_write_idx_ = 0;
       }
     }
-
-    spectral_gen_->generate(out);
   }
   
   VESSL_INLINE typename Sympathies::band_t get_band(analog_t freq_in_hz) const
@@ -201,7 +195,6 @@ public:
     Sympathies* spectral_generator  = Sympathies::create(sample_rate);
     sample_t*   input_window_data   = new sample_t[AnalysisSize];
     sample_t*   input_buffer_data   = new sample_t[AnalysisSize];
-    sample_t*   input_analyze_data  = new sample_t[AnalysisSize];
     complex_t*  input_spectrum_data = new complex_t[AnalysisSize/2];
     
     vessl::sample::windows::render(input_window_type, input_window_data, AnalysisSize);
@@ -209,7 +202,6 @@ public:
     return new Condolences(sample_rate,
       input_window_data,
       input_buffer_data, 
-      input_analyze_data,
       input_spectrum_data,
       spectral_generator
       );
@@ -301,10 +293,10 @@ private:
   
   SampleArray  input_window_;
   SampleArray  input_buffer_;
-  SampleArray  input_analyze_;
   ComplexArray input_spectrum_;
   
   FFT input_fft_;
 
   Sympathies* spectral_gen_;
+  uint32_t    input_buffer_write_idx_;
 };

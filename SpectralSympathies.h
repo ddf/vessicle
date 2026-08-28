@@ -121,17 +121,7 @@ public:
   VESSL_INLINE void generate(SampleArray output)
   {
     fill_spectrum();
-    if (phase_flip_)
-    {
-      generator_->template generate<true>(output);
-      phase_flip_ = false;
-    }
-    else
-    {
-      generator_->template generate<false>(output);
-      phase_flip_ = true;
-    }
-
+    generator_->generate(output);
     const float volume = vessl::math::constrain(params_.volume.value, 0.f, 1.f);
     output.scale(volume);
   }

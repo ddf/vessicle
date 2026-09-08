@@ -69,10 +69,9 @@ public:
   VESSL_INLINE void excite(size_t bidx, complex_t in, float response)
   {
     band_t& band = generator_->get_band(bidx);
-    //float band_mag = band.magnitude();
-    float in_mag = in.normalize();
-    //if (band_mag < 0.25f)
+    if (band.magnitude() < 0.9f)
     {
+      const float in_mag = in.normalize();
       complex_t band_cmplx = band.to_complex();
       complex_t delta = in - band_cmplx;
       delta.scale(in_mag*response);

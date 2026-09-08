@@ -51,18 +51,20 @@ public:
   using FFT          = vessl::transform::fft<sample_t>;
   using Frequency    = vessl::frequency<analog_t>;
 
-  static constexpr size_t AnalysisSize = Sympathies::overlap_size;
+  static constexpr size_t AnalysisSize = SpectrumSize/Overlap;
   static constexpr size_t StringCountMax = AnalysisSize/2;
   static constexpr size_t SpreadWidth = 2;
   // for clamping the param
   static constexpr float DensityMin = 4;
-  static constexpr float DensityMax = static_cast<float>(AnalysisSize/2)/(SpreadWidth*2);
+  static constexpr float DensityMax = static_cast<float>(StringCountMax)/(SpreadWidth*2);
   
   Condolences(
     const analog_t sample_rate,  
     sample_t* input_window_data,
     sample_t* input_buffer_data,
+    sample_t* input_analysis_data,
     complex_t* input_spectrum_data,
+    sample_t* output_buffer_data,
     Sympathies* spectral_generator
   )
   : sample_rate_(sample_rate)
@@ -72,13 +74,17 @@ public:
   , decay_min_(static_cast<float>(Sympathies::overlap_size) / sample_rate)
   , input_window_(input_window_data, AnalysisSize)
   , input_buffer_(input_buffer_data, AnalysisSize)
+  , input_analysis_(input_buffer_data, AnalysisSize)
   , input_spectrum_(input_spectrum_data, AnalysisSize/2)
   , input_fft_(AnalysisSize)
   , spectral_gen_(spectral_generator)
+  , output_buffer_(output_buffer_data, Sympathies::overlap_size)
   , input_buffer_write_idx_(0)
+  , output_buffer_read_idx_(0)
   {
     params_.response.value = 0.1f;
     input_buffer_.fill(0);
+    output_buffer_.fill(0);
   }
 
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
@@ -120,23 +126,22 @@ public:
     // volume_ = vessl::math::interp<vessl::math::easing::expo::out>(1.0f, 0.5f, 
     //     0.2f*params_.decay.value
     //   + 0.2f*params_.spread.value);
-    volume_ = 0.25f;
+    volume_ = 1.0f;
     
     spectral_gen_->spread() = smear_.value;
     spectral_gen_->damping() = damping_.value;
     spectral_gen_->melt() = melt_.value;
     spectral_gen_->volume() = volume_.value;
 
-    const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 1ull);
+    const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 4ull);
     for(size_t i = 0; i < block_size; ++i)
     {
-      out[i] = input_buffer_[input_buffer_write_idx_];
-      input_buffer_[input_buffer_write_idx_] = in[i]*input_window_[input_buffer_write_idx_];
-      ++input_buffer_write_idx_;
+      input_buffer_[input_buffer_write_idx_++] = in[i];
 
       if (input_buffer_write_idx_ == AnalysisSize)
       {
-        input_fft_.forward(input_buffer_, input_spectrum_);
+        input_buffer_.multiply(input_window_, input_analysis_);
+        input_fft_.forward(input_analysis_, input_spectrum_);
 
         // transfer spectrum data from input analysis to spectral_gen
         // by sampling only those frequencies represented by our strings.
@@ -154,7 +159,7 @@ public:
           float response = response_.value;
           // main string
           {
-            const size_t tbi = spectral_gen_->get_band_index(fbi*band_spacing_); 
+            const size_t tbi = f2t(fbi);
             spectral_gen_->excite(tbi, input_spectrum_[fbi], response);
           }
 
@@ -178,8 +183,27 @@ public:
           pbi = fbi;
         }
 
-        spectral_gen_->generate(input_buffer_);
-        input_buffer_write_idx_ = 0;
+        /** @todo figure out why this breaks the audio thread */
+        // if constexpr(Sympathies::overlap_size < AnalysisSize)
+        // {
+        //   const size_t count = AnalysisSize - Sympathies::overlap_size;
+        //   for(size_t s = 0; s < count; ++s)
+        //   {
+        //     input_buffer_[s] = input_buffer_[s+Sympathies::overlap_size];
+        //   }
+        //   input_buffer_write_idx_ = count;
+        // }
+        // else
+        {
+          input_buffer_write_idx_ = 0;
+        }
+      }
+
+      out[i] = output_buffer_[output_buffer_read_idx_++];
+      if (output_buffer_read_idx_ == Sympathies::overlap_size)
+      {
+        spectral_gen_->generate(output_buffer_);
+        output_buffer_read_idx_ = 0;
       }
     }
   }
@@ -196,6 +220,7 @@ public:
     sample_t*   input_window_data   = new sample_t[AnalysisSize];
     sample_t*   input_buffer_data   = new sample_t[AnalysisSize];
     complex_t*  input_spectrum_data = new complex_t[AnalysisSize/2];
+    sample_t*   output_buffer_data  = new sample_t[Sympathies::overlap_size];
     
     vessl::sample::windows::render(input_window_type, input_window_data, AnalysisSize);
     
@@ -203,6 +228,7 @@ public:
       input_window_data,
       input_buffer_data, 
       input_spectrum_data,
+      output_buffer_data,
       spectral_generator
       );
   }
@@ -213,6 +239,7 @@ public:
     {
       Sympathies::destroy(condolences->spectral_gen_);
       delete[] condolences->input_spectrum_.data();
+      delete[] condolences->output_buffer_.data();
       delete[] condolences->input_analyze_.data();
       delete[] condolences->input_buffer_.data();
       delete[] condolences->input_window_.data();
@@ -293,10 +320,13 @@ private:
   
   SampleArray  input_window_;
   SampleArray  input_buffer_;
+  SampleArray  input_analysis_;
   ComplexArray input_spectrum_;
   
   FFT input_fft_;
 
   Sympathies* spectral_gen_;
+  SampleArray output_buffer_;
   uint32_t    input_buffer_write_idx_;
+  uint32_t    output_buffer_read_idx_;
 };

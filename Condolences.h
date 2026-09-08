@@ -151,6 +151,9 @@ public:
         while(si < string_count)
         {
           const float st = static_cast<float>(si)/(string_count-1);
+          /** @todo want to try building a lut of indices based on MIDI note frequencies to see if that captures things better. 
+           *  right now this is a bit heavier in the very low end than I'd like.
+          */
           const size_t abi = static_cast<size_t>(
             vessl::math::interp<vessl::math::easing::expo::in>(band_first_idx_, band_last_idx_, st)
           );

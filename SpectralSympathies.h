@@ -20,6 +20,7 @@ public:
   using phase_t = vessl::phase_t;
   using complex_t = vessl::transform::complex<float>;
   using SmearLfo = vessl::sample::waves::unipolar::triangle<float>;
+  using Filter = vessl::filtering::biquad<2>::low_pass<float>;
 
   static constexpr size_t overlap_size = (SpectrumSize/(Overlap*2));
   static constexpr size_t overlap_size_half = (overlap_size/2);
@@ -171,33 +172,60 @@ private:
       band.scale(dmp);
     }
 
-    smear_lfo_phase_ += smear_lfo_step;
-    float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_)*(smear_bands_max/2);
-    float smear_scale = vessl::math::interp<vessl::math::easing::expo::out>(8.0f, 0.125f, dmp);
-    float smear_amt = params_.spread.value * smear_scale * (1.f / Overlap);
-    const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
-    if (smear_width > 0 && smear_amt > 0)
+    /** @todo this is pretty interesting, creates an effect similar to melt but upwards in frequency. 
+     *  should probably do something like this for melt. what's there is also a filter, just very rudimentary and not as interesting.
+     *  processing the bands array in reverse thru the filter creates the downwards effect of melt.
+     *  and different filter types have distinct sounds. 
+     *  sounds about the same when performed on the complex data directly as it does operation on magnitudes, but the phase motion is probably welcome.
+     *  having downward and upward motion playing against each other is also cool, so probably want to do both.
+     *  maybe replace smear with upward motion and then use the lfo to modulate the frequency of both filters, or maybe q.
+     *  high_pass and low_pass are the most impactful.
+     *  low_pass with a cutoff very close to nyquist sounds like what I have been wanting spread to sound like!
+     *  and of course this makes me also want to try a delay line.
+     */
+    const float hz = vessl::math::lerp(60.f, sample_rate_*0.49f, params_.spread.value);
+    vessl::filtering::args fargs(sample_rate_, hz, vessl::filtering::q::butterworth<float>(), vessl::gain_t(0.0f));
+    for (size_t i = 1; i < count; ++i)
     {
-      for (size_t i = 2 + smear_width; i < count/2 - smear_width; i+=2)
-      {
-        band_t& band = generator_->get_band(i);
-        
-        // "smear" the spectrum contents by blending nearby bands
-        const size_t li = i / smear_width;
-        const size_t hi = i * smear_width;
-        band_t lob = li > 0 ? generator_->get_band(li) : band_t();
-        band_t hib = hi < count ? generator_->get_band(hi) : band_t();
+      band_t& band = generator_->get_band(i);
+      // float mag_in = band.magnitude();
+      // float mag_out;
+      // smear_flt_.process(&mag_in, &mag_out, 1, fargs);
+      // band.set_magnitude(mag_out);
 
-        lob.scale(smear_amt);
-        hib.scale(smear_amt);
-        band.add(lob);
-        band.add(hib);
-
-        // doing this nerfs the decay effect when smear is turned up.
-        //float mag = band.magnitude();
-        //band.scale(mag > 0.8f ? 0.8f - smear_amt*2 : 1.0f - smear_amt*2);
-      }
+      complex_t cmplx = band.to_complex();
+      float* cptr = reinterpret_cast<float*>(&cmplx);
+      smear_flt_.process(cptr, cptr, 2, fargs);
+      band.set_complex(cmplx);
     }
+
+    // smear_lfo_phase_ += smear_lfo_step;
+    // float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_)*(smear_bands_max/2);
+    // float smear_scale = vessl::math::interp<vessl::math::easing::expo::out>(8.0f, 0.125f, dmp);
+    // float smear_amt = params_.spread.value * smear_scale * (1.f / Overlap);
+    // const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
+    // if (smear_width > 0 && smear_amt > 0)
+    // {
+    //   for (size_t i = 2 + smear_width; i < count/2 - smear_width; i+=2)
+    //   {
+    //     band_t& band = generator_->get_band(i);
+        
+    //     // "smear" the spectrum contents by blending nearby bands
+    //     const size_t li = i / smear_width;
+    //     const size_t hi = i * smear_width;
+    //     band_t lob = li > 0 ? generator_->get_band(li) : band_t();
+    //     band_t hib = hi < count ? generator_->get_band(hi) : band_t();
+
+    //     lob.scale(smear_amt);
+    //     hib.scale(smear_amt);
+    //     band.add(lob);
+    //     band.add(hib);
+
+    //     // doing this nerfs the decay effect when smear is turned up.
+    //     //float mag = band.magnitude();
+    //     //band.scale(mag > 0.8f ? 0.8f - smear_amt*2 : 1.0f - smear_amt*2);
+    //   }
+    // }
   }
 
   struct 
@@ -211,6 +239,7 @@ private:
   float sample_rate_;
   SmearLfo smear_lfo_;
   phase_t smear_lfo_phase_;
+  Filter smear_flt_;
 
   SpectralGen* generator_;
   bool phase_flip_ = false;

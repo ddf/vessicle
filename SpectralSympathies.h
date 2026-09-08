@@ -23,7 +23,7 @@ public:
 
   static constexpr size_t overlap_size = (SpectrumSize/(Overlap*2));
   static constexpr size_t overlap_size_half = (overlap_size/2);
-  static constexpr size_t smear_bands_max = SpectrumSize/128;
+  static constexpr size_t smear_bands_max = 8; // SpectrumSize/128;
   static constexpr phase_t smear_lfo_step = vessl::phase_180 / Overlap / smear_bands_max;
   
   SpectralSympathies(SpectralGen* spec_gen, float sample_rate)
@@ -178,7 +178,7 @@ private:
     const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
     if (smear_width > 0 && smear_amt > 0)
     {
-      for (size_t i = 2 + smear_width; i < count/2 - smear_width; i++)
+      for (size_t i = 2 + smear_width; i < count/2 - smear_width; i+=2)
       {
         band_t& band = generator_->get_band(i);
         

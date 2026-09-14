@@ -52,11 +52,17 @@ public:
   using Frequency    = vessl::frequency<analog_t>;
 
   static constexpr size_t AnalysisSize = SpectrumSize/Overlap;
-  static constexpr size_t StringCountMax = AnalysisSize/2;
   static constexpr size_t SpreadWidth = 2;
+
   // for clamping the param
-  static constexpr float DensityMin = 4;
-  static constexpr float DensityMax = static_cast<float>(StringCountMax)/(SpreadWidth*2);
+  static constexpr size_t DensityMin = 4;
+  static constexpr size_t DensityMax = 128;
+
+  // frequency in Hz of each string.
+  // Density describes how many strings to use.
+  // String frequency is then used to exite a specific analysis band.
+  // So we pre-compute all string frequencies.
+  vessl::analog_t strings[DensityMax];
   
   Condolences(
     const analog_t sample_rate,  
@@ -69,8 +75,6 @@ public:
   )
   : sample_rate_(sample_rate)
   , band_spacing_(sample_rate/AnalysisSize)
-  , band_first_idx_(1.f + SpreadWidth)
-  , band_last_idx_(static_cast<float>(AnalysisSize/2) - SpreadWidth - 1)
   , decay_min_(static_cast<float>(Sympathies::overlap_size) / sample_rate)
   , input_window_(input_window_data, AnalysisSize)
   , input_buffer_(input_buffer_data, AnalysisSize)
@@ -85,6 +89,12 @@ public:
     params_.response.value = 0.1f;
     input_buffer_.fill(0);
     output_buffer_.fill(0);
+
+    for(size_t i = 0; i < DensityMax; ++i)
+    {
+      analog_t midi_note = static_cast<analog_t>(i);
+      strings[i] = vessl::midi_note_to_hertz(midi_note);
+    }
   }
 
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
@@ -119,7 +129,7 @@ public:
     melt_     = params_.melt.value;
     damping_  = get_damping(params_.decay.value, 0.f);
 
-    density_ = vessl::math::constrain(params_.density.value, DensityMin, DensityMax);
+    density_ = vessl::math::constrain(params_.density.value, static_cast<analog_t>(DensityMin), static_cast<analog_t>(DensityMax));
     spacing_ = params_.spacing.value;
     
     // reduce volume based on combination of decay, spread, and brightness parameters
@@ -146,19 +156,12 @@ public:
         // transfer spectrum data from input analysis to spectral_gen
         // by sampling only those frequencies represented by our strings.
         // i.e. comb filter it.
-        size_t si = 0;
-        uint16_t pbi = 0;
-        while(si < string_count)
+        for(size_t si = 0; si < string_count; ++si)
         {
           const float st = static_cast<float>(si)/(string_count-1);
-          /** @todo want to try building a lut of indices based on MIDI note frequencies to see if that captures things better. 
-           *  right now this is a bit heavier in the very low end than I'd like.
-          */
-          const size_t abi = static_cast<size_t>(
-            vessl::math::interp<vessl::math::easing::expo::in>(band_first_idx_, band_last_idx_, st)
-          );
-
-          const size_t fbi = abi > pbi ? abi : pbi+1;
+          const size_t sidx = static_cast<size_t>(st*(DensityMax-1));
+          const float shz = strings[sidx];
+          const size_t fbi = spectral_gen_->get_band_index(shz);
           float response = response_.value;
           // main string
           {
@@ -181,9 +184,6 @@ public:
             spectral_gen_->excite(tbi0, input_spectrum_[fbi-2], response);
             spectral_gen_->excite(tbi1, input_spectrum_[fbi+2], response);
           }
-
-          ++si;
-          pbi = fbi;
         }
 
         /** @todo figure out why this breaks the audio thread */

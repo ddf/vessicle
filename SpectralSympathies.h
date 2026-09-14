@@ -69,21 +69,33 @@ public:
 
   VESSL_INLINE void excite(size_t bidx, complex_t in, float response)
   {
-    band_t& band = generator_->get_band(bidx);
-    if (band.magnitude() < 0.9f)
+    if (bidx > 1 && bidx < SpectrumSize/2)
     {
-      const float in_mag = in.normalize();
-      complex_t band_cmplx = band.to_complex();
-      complex_t delta = in - band_cmplx;
-      delta.scale(in_mag*response);
-      band_cmplx.add(delta);
-      band.set_complex(band_cmplx);
+      band_t& band = generator_->get_band(bidx);
+
+      // this has a widening effect, but is more complicated that it needs to be,
+      // and can wind up overloading some bands.
+      // if (band.magnitude() < response)
+      // {
+      //   const float in_mag = in.normalize();
+      //   complex_t band_cmplx = band.to_complex();
+      //   complex_t delta = in - band_cmplx;
+      //   delta.scale(in_mag*response);
+      //   band_cmplx.add(delta);
+      //   band.set_complex(band_cmplx);
+      // }
+
+      // simple, direct, no overloading.
+      if (band.magnitude() < response)
+      {
+        band.set_complex(in);
+      }
     }
   }
 
   void excite(size_t bidx, float amp, phase_t phase)
   {
-    //if (bidx > 1 && bidx < SpectrumSize/2)
+    if (bidx > 1 && bidx < SpectrumSize/2)
     {
       band_t& band = generator_->get_band(bidx);
       float ba = band.magnitude();

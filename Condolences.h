@@ -56,7 +56,7 @@ public:
 
   // for clamping the param
   static constexpr size_t DensityMin = 4;
-  static constexpr size_t DensityMax = 128;
+  static constexpr size_t DensityMax = AnalysisSize/2;
 
   // frequency in Hz of each string.
   // Density describes how many strings to use.
@@ -92,7 +92,7 @@ public:
 
     for(size_t i = 0; i < DensityMax; ++i)
     {
-      analog_t midi_note = static_cast<analog_t>(i);
+      analog_t midi_note = 127*(static_cast<analog_t>(i) / DensityMax);
       strings[i] = vessl::midi_note_to_hertz(midi_note);
     }
   }
@@ -164,26 +164,26 @@ public:
           const size_t fbi = spectral_gen_->get_band_index(shz);
           float response = response_.value;
           // main string
+          const size_t tbi = f2t(fbi);
           {
-            const size_t tbi = f2t(fbi);
             spectral_gen_->excite(tbi, input_spectrum_[fbi], response);
           }
 
           // spread strings
           {
             response *= spread_.value;
-            const size_t tbi0 = f2t(fbi-1);
-            const size_t tbi1 = f2t(fbi+1);
-            spectral_gen_->excite(tbi0, input_spectrum_[fbi-1], response);
-            spectral_gen_->excite(tbi1, input_spectrum_[fbi+1], response);
+            const size_t tbi0 = tbi-1; // f2t(fbi-1);
+            const size_t tbi1 = tbi+1; //f2t(fbi+1);
+            spectral_gen_->excite(tbi0, input_spectrum_[fbi], response);
+            spectral_gen_->excite(tbi1, input_spectrum_[fbi], response);
           }
-          {
-            response *= spread_.value;
-            const size_t tbi0 = f2t(fbi-2);
-            const size_t tbi1 = f2t(fbi+2);
-            spectral_gen_->excite(tbi0, input_spectrum_[fbi-2], response);
-            spectral_gen_->excite(tbi1, input_spectrum_[fbi+2], response);
-          }
+          // {
+          //   response *= spread_.value;
+          //   const size_t tbi0 = tbi-2; // f2t(fbi-2);
+          //   const size_t tbi1 = tbi+2; // f2t(fbi+2);
+          //   spectral_gen_->excite(tbi0, input_spectrum_[fbi], response);
+          //   spectral_gen_->excite(tbi1, input_spectrum_[fbi], response);
+          // }
         }
 
         /** @todo figure out why this breaks the audio thread */

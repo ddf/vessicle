@@ -20,16 +20,18 @@ public:
   using phase_t = vessl::phase_t;
   using complex_t = vessl::transform::complex<float>;
   using SmearLfo = vessl::sample::waves::unipolar::triangle<float>;
-  using Filter = vessl::filtering::biquad<2>::low_pass<float>;
+  using SmearFilter = vessl::filtering::biquad<2>::high_pass<float>;
+  using MeltFilter  = vessl::filtering::biquad<1>::low_pass<float>;
 
   static constexpr size_t overlap_size = (SpectrumSize/(Overlap*2));
   static constexpr size_t overlap_size_half = (overlap_size/2);
   static constexpr size_t smear_bands_max = 8; // SpectrumSize/128;
-  static constexpr phase_t smear_lfo_step = vessl::phase_180 / Overlap / smear_bands_max;
   
-  SpectralSympathies(SpectralGen* spec_gen, float sample_rate)
+  SpectralSympathies(SpectralGen* spec_gen, float sample_rate, float* scratch_data)
     : sample_rate_(sample_rate)
     , smear_lfo_phase_(0)
+    , smear_lfo_step_(vessl::cast<phase_t>(1.f/sample_rate))
+    , filter_scratch_(scratch_data, SpectrumSize)
     , generator_(spec_gen)
   {
     params_.volume.value = 1.0f;
@@ -62,7 +64,7 @@ public:
     return (accum / (SpectrumSize/2));
   }
 
-  VESSL_INLINE Parameter spread() const { return params_.spread("spread", 's'); }
+  VESSL_INLINE Parameter smear() const { return params_.smear("smear", 's'); }
   VESSL_INLINE Parameter damping() const { return params_.damping("damping", 'd'); }
   VESSL_INLINE Parameter melt() const { return params_.melt("melt", 'm'); }
   VESSL_INLINE Parameter volume() const { return params_.volume("volume", 'v'); }
@@ -140,13 +142,15 @@ public:
 
   static SpectralSympathies* create(float sample_rate)
   {
+    float* scratch_data = new float[SpectrumSize];
     SpectralGen* spectral_gen = SpectralGen::create(sample_rate, vessl::sample::windows::type::triangle);
-    return new SpectralSympathies(spectral_gen, sample_rate);
+    return new SpectralSympathies(spectral_gen, sample_rate, scratch_data);
   }
 
   static void destroy(SpectralSympathies* synth)
   {
     SpectralGen::destroy(synth->generator_);
+    delete[] synth->filter_scratch_.data();
     delete synth;
   }
 
@@ -156,7 +160,7 @@ protected:
     switch (index)
     {
       case 0: return damping();
-      case 1: return spread();
+      case 1: return smear();
       case 2: return melt();
       case 3: return volume();
       default: return Parameter::none();
@@ -166,48 +170,57 @@ protected:
 private:
   VESSL_INLINE void fill_spectrum()
   {    
-    const float mlt = params_.melt.value*0.75f;
-    const float dmp = params_.damping.value;
     const size_t count = SpectrumSize/2;
+    const float smr = params_.smear.value;
+    const float mlt = params_.melt.value;
+    const float dmp = vessl::math::constrain(params_.damping.value + smr*0.05f + mlt*0.05f, 0.0001f, 0.9999f);
+
     for (size_t i = 1; i < count; ++i)
     {
-      band_t& band = generator_->get_band(i);
+      band_t& band = generator_->get_band(count - i);
+      filter_scratch_[i-1] = band.magnitude();
       
       //"melt" some of this band's energy into the band below.
-      const size_t mi = i == 1 ? count - 1 : i-1;
-      band_t& target = generator_->get_band(mi);
-      float bmag = band.magnitude();
-      target.set_magnitude(target.magnitude() + bmag*mlt);
-      band.set_magnitude(bmag - bmag*mlt);
-
-      // now apply normal decay to this band
-      band.scale(dmp);
+      // const size_t mi = i == 1 ? count - 1 : i-1;
+      // band_t& target = generator_->get_band(mi);
+      // float bmag = band.magnitude();
+      // target.set_magnitude(target.magnitude() + bmag*mlt);
+      // band.set_magnitude(bmag - bmag*mlt);
     }
 
-    /** @todo this is pretty interesting, creates an effect similar to melt but upwards in frequency. 
-     *  should probably do something like this for melt. what's there is also a filter, just very rudimentary and not as interesting.
-     *  processing the bands array in reverse thru the filter creates the downwards effect of melt.
-     *  and different filter types have distinct sounds. 
-     *  sounds about the same when performed on the complex data directly as it does operation on magnitudes, but the phase motion is probably welcome.
-     *  having downward and upward motion playing against each other is also cool, so probably want to do both.
-     *  maybe replace smear with upward motion and then use the lfo to modulate the frequency of both filters, or maybe q.
-     *  high_pass and low_pass are the most impactful.
-     *  low_pass with a cutoff very close to nyquist sounds like what I have been wanting spread to sound like!
-     *  and of course this makes me also want to try a delay line.
-     */
-    const float hz = vessl::math::lerp(60.f, sample_rate_*0.49f, params_.spread.value);
-    vessl::filtering::args fargs(sample_rate_, hz, vessl::filtering::q::butterworth<float>(), vessl::gain_t(0.0f));
+    const float mhz = vessl::math::lerp(sample_rate_*0.49f, sample_rate_*0.25f, mlt);
+    vessl::filtering::args mlt_args(sample_rate_, mhz, vessl::filtering::q::butterworth<float>(), vessl::gain_t(0.0f));
+    // apply melt
+    melt_flt_.process(filter_scratch_.data(), filter_scratch_.data(), count-1, mlt_args);
+
+    for (size_t i = 1; i < count; ++i)
+    {
+      band_t& band = generator_->get_band(count - i);
+      band.set_magnitude(filter_scratch_[i-1]);
+    }
+
+    float* scratch = filter_scratch_.data();
     for (size_t i = 1; i < count; ++i)
     {
       band_t& band = generator_->get_band(i);
-      // float mag_in = band.magnitude();
-      // float mag_out;
-      // smear_flt_.process(&mag_in, &mag_out, 1, fargs);
-      // band.set_magnitude(mag_out);
-
       complex_t cmplx = band.to_complex();
-      float* cptr = reinterpret_cast<float*>(&cmplx);
-      smear_flt_.process(cptr, cptr, 2, fargs);
+      *scratch++ = cmplx.r;
+      *scratch++ = cmplx.i;
+    }
+
+    smear_lfo_phase_ += smear_lfo_step_;
+    float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_) * smr;
+    const float hz = 20.f + sample_rate_*0.25*smear_mod;
+    vessl::filtering::args smr_args(sample_rate_, hz, vessl::filtering::q::butterworth<float>(), vessl::gain_t(0.0f));
+    smear_flt_.process(filter_scratch_.data(), filter_scratch_.data(), (count-1)*2, smr_args);
+
+    scratch = filter_scratch_.data();
+    for (size_t i = 1; i < count; ++i)
+    {
+      band_t& band = generator_->get_band(i);
+      const float re = *scratch++;
+      const float im = *scratch++;
+      complex_t cmplx(re*dmp, im*dmp);
       band.set_complex(cmplx);
     }
 
@@ -243,7 +256,7 @@ private:
   struct 
   {
     vessl::analog_p damping;
-    vessl::analog_p spread;
+    vessl::analog_p smear;
     vessl::analog_p melt;
     vessl::analog_p volume;
   } params_;
@@ -251,7 +264,10 @@ private:
   float sample_rate_;
   SmearLfo smear_lfo_;
   phase_t smear_lfo_phase_;
-  Filter smear_flt_;
+  phase_t smear_lfo_step_;
+  SmearFilter smear_flt_;
+  MeltFilter melt_flt_;
+  SampleArray filter_scratch_;
 
   SpectralGen* generator_;
   bool phase_flip_ = false;

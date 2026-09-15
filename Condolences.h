@@ -138,7 +138,7 @@ public:
     //   + 0.2f*params_.spread.value);
     volume_ = 1.0f;
     
-    spectral_gen_->spread() = smear_.value;
+    spectral_gen_->smear() = smear_.value;
     spectral_gen_->damping() = damping_.value;
     spectral_gen_->melt() = melt_.value;
     spectral_gen_->volume() = volume_.value;

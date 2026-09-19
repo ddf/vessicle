@@ -34,7 +34,7 @@ DESCRIPTION:
 */
 
 template<typename T, uint16_t SpectrumSize, uint8_t Overlap>
-class Condolences : public vessl::unit_processor<T>, public vessl::plist<7>
+class Condolences : public vessl::unit_processor<T>, public vessl::plist<8>
 {
 public:
   using sample_t     = T;
@@ -97,6 +97,7 @@ public:
   }
 
   [[nodiscard]] Parameter density() const { return params_.density("density", 'd'); }
+  [[nodiscard]] Parameter shift() const { return params_.shift("shift", 'h'); }
   [[nodiscard]] Parameter spacing() const { return params_.spacing("spacing", 's'); }
   [[nodiscard]] Parameter spread() const { return params_.spread("spread", 'r'); }
   [[nodiscard]] Parameter smear() const { return params_.smear("smear", 'e'); }
@@ -129,6 +130,8 @@ public:
     damping_  = get_damping(params_.decay.value, 0.f);
 
     density_ = vessl::math::constrain(params_.density.value, static_cast<analog_t>(DensityMin), static_cast<analog_t>(DensityMax));
+    shift_   = 1.f + (params_.shift.value < -0.01f ? params_.shift.value*0.75f 
+                   : (params_.shift.value > 0.01f ? params_.shift.value*4.f : 0.f));
     spacing_ = params_.spacing.value;
     
     // reduce volume based on combination of decay, spread, and brightness parameters
@@ -161,7 +164,7 @@ public:
           const size_t sidx = static_cast<size_t>(st*(DensityMax-1));
           const float shz = strings[sidx];
           const size_t fbi = spectral_gen_->get_band_index(shz);
-          const size_t tbi = f2t(fbi);
+          const size_t tbi = f2t(fbi, shift_.value);
           float response = response_.value;
 
           // main string
@@ -266,12 +269,13 @@ protected:
     switch (index)
     {
       case 0: return density();
-      case 1: return spacing();
-      case 2: return spread();
-      case 3: return smear();
-      case 4: return melt();
-      case 5: return sensitivity();
-      case 6: return decay();
+      case 1: return shift();
+      case 2: return spacing();
+      case 3: return spread();
+      case 4: return smear();
+      case 5: return melt();
+      case 6: return sensitivity();
+      case 7: return decay();
       default: return Parameter::none();
     }
   }
@@ -298,10 +302,11 @@ private:
     return vessl::math::lerp(damp_exp, damp_lin, exp_lin_lerp);
   }
 
-  VESSL_INLINE size_t f2t(size_t fbi)
+  VESSL_INLINE size_t f2t(size_t fbi, const float thz_scale)
   {
     static constexpr float spectral_band_count = SpectrumSize/2;
-    const float tbi_log = spectral_gen_->get_band_index(fbi*band_spacing_) / spectral_band_count;
+    const float thz = (fbi*band_spacing_)*thz_scale;
+    const float tbi_log = spectral_gen_->get_band_index(thz) / spectral_band_count;
     const float tbi_lin = vessl::math::interp<vessl::math::easing::expo::out>(0.f, 1.f, tbi_log);
     return static_cast<size_t>(vessl::math::lerp(tbi_log, tbi_lin, spacing_.value) * spectral_band_count);
   } 
@@ -309,6 +314,7 @@ private:
   struct
   {
     vessl::analog_p density;
+    vessl::analog_p shift;
     vessl::analog_p spacing;
     vessl::analog_p spread;
     vessl::analog_p smear;
@@ -318,6 +324,7 @@ private:
   } params_;
   
   Smoother density_;
+  Smoother shift_;
   Smoother spacing_;
   Smoother spread_;
   Smoother smear_;

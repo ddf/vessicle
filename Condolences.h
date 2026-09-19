@@ -52,7 +52,6 @@ public:
   using Frequency    = vessl::frequency<analog_t>;
 
   static constexpr size_t AnalysisSize = SpectrumSize/Overlap;
-  static constexpr size_t SpreadWidth = 2;
 
   // for clamping the param
   static constexpr size_t DensityMin = 4;
@@ -162,28 +161,32 @@ public:
           const size_t sidx = static_cast<size_t>(st*(DensityMax-1));
           const float shz = strings[sidx];
           const size_t fbi = spectral_gen_->get_band_index(shz);
-          float response = response_.value;
-          // main string
           const size_t tbi = f2t(fbi);
-          {
-            spectral_gen_->excite(tbi, input_spectrum_[fbi], response);
-          }
+          float response = response_.value;
+
+          // main string
+          excite(tbi, fbi, response);
 
           // spread strings
           {
             response *= spread_.value;
+            const size_t fbi0 = fbi-1;
+            const size_t fbi1 = fbi+1;
             const size_t tbi0 = tbi-1; // f2t(fbi-1);
             const size_t tbi1 = tbi+1; //f2t(fbi+1);
-            spectral_gen_->excite(tbi0, input_spectrum_[fbi], response);
-            spectral_gen_->excite(tbi1, input_spectrum_[fbi], response);
+            excite(tbi0, fbi0, response);
+            excite(tbi1, fbi1, response);
           }
-          // {
-          //   response *= spread_.value;
-          //   const size_t tbi0 = tbi-2; // f2t(fbi-2);
-          //   const size_t tbi1 = tbi+2; // f2t(fbi+2);
-          //   spectral_gen_->excite(tbi0, input_spectrum_[fbi], response);
-          //   spectral_gen_->excite(tbi1, input_spectrum_[fbi], response);
-          // }
+
+          {
+            response *= spread_.value;
+            const size_t fbi0 = fbi-2;
+            const size_t fbi1 = fbi+2;
+            const size_t tbi0 = tbi-2; // f2t(fbi-2);
+            const size_t tbi1 = tbi+2; // f2t(fbi+2);
+            excite(tbi0, fbi0, response);
+            excite(tbi1, fbi1, response);
+          }
         }
 
         /** @todo figure out why this breaks the audio thread */
@@ -208,6 +211,14 @@ public:
         spectral_gen_->generate(output_buffer_);
         output_buffer_read_idx_ = 0;
       }
+    }
+  }
+
+  VESSL_INLINE void excite(const size_t tidx, const size_t fidx, const float response)
+  {
+    if (!(tidx < 1 || tidx >= SpectrumSize/2 || fidx < 1 || fidx >= AnalysisSize/2))
+    {
+      spectral_gen_->excite(tidx, input_spectrum_[fidx], response);
     }
   }
   

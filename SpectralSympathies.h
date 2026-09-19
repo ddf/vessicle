@@ -71,7 +71,7 @@ public:
 
   VESSL_INLINE void excite(size_t bidx, complex_t in, float response)
   {
-    if (bidx > 1 && bidx < SpectrumSize/2)
+    //if (bidx > 1 && bidx < SpectrumSize/2)
     {
       band_t& band = generator_->get_band(bidx);
 

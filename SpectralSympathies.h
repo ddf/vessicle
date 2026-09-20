@@ -9,7 +9,7 @@
 #include "vessl/vessl.h"
 
 template<vessl::size_t SpectrumSize, vessl::size_t Overlap = 1>
-class SpectralSympathies : public vessl::unit_generator<float>, vessl::plist<4>
+class SpectralSympathies : public vessl::unit_generator<float>, vessl::plist<5>
 {
 public:
   using SpectralGen = SpectralGenerator<float, SpectrumSize, Overlap>;
@@ -19,7 +19,7 @@ public:
   using size_t = vessl::size_t;
   using phase_t = vessl::phase_t;
   using complex_t = vessl::transform::complex<float>;
-  using SmearLfo = vessl::sample::waves::unipolar::triangle<float>;
+  using SmearLfo = vessl::sample::waves::bipolar::sine<float>;
   using SmearFilter = vessl::filtering::biquad<2>::high_pass<float>;
   using MeltFilter  = vessl::filtering::biquad<1>::low_pass<float>;
 
@@ -30,12 +30,13 @@ public:
   SpectralSympathies(SpectralGen* spec_gen, float sample_rate, float* scratch_data)
     : sample_rate_(sample_rate)
     , smear_lfo_phase_(0)
-    , smear_lfo_step_(vessl::cast<phase_t>(1.f/sample_rate))
+    , smear_lfo_step_(vessl::cast<phase_t>(1.f/overlap_size))
     , filter_scratch_(scratch_data, SpectrumSize)
     , generator_(spec_gen)
   {
     params_.volume.value = 1.0f;
     params_.damping.value = 0.9f;
+    params_.motion.value = 1.0f;
   }
       
   VESSL_INLINE size_t get_band_index(float frequency)
@@ -67,6 +68,7 @@ public:
   VESSL_INLINE Parameter smear() const { return params_.smear("smear", 's'); }
   VESSL_INLINE Parameter damping() const { return params_.damping("damping", 'd'); }
   VESSL_INLINE Parameter melt() const { return params_.melt("melt", 'm'); }
+  VESSL_INLINE Parameter motion() const { return params_.motion("motion", 'o'); }
   VESSL_INLINE Parameter volume() const { return params_.volume("volume", 'v'); }
 
   VESSL_INLINE void excite(size_t bidx, complex_t in, float response)
@@ -162,7 +164,8 @@ protected:
       case 0: return damping();
       case 1: return smear();
       case 2: return melt();
-      case 3: return volume();
+      case 3: return motion();
+      case 4: return volume();
       default: return Parameter::none();
     }
   }
@@ -171,21 +174,16 @@ private:
   VESSL_INLINE void fill_spectrum()
   {    
     const size_t count = SpectrumSize/2;
-    const float smr = params_.smear.value;
+    const float smr = vessl::math::max(params_.smear.value, 0.f);
     const float mlt = params_.melt.value;
-    const float dmp = vessl::math::constrain(params_.damping.value + smr*0.05f + mlt*0.05f, 0.0001f, 0.9999f);
+    const float mot = vessl::math::max(params_.motion.value, 0.f);
+    const float dmp = vessl::math::constrain(params_.damping.value + mot*0.05f + mlt*0.05f, 0.0001f, 0.9999f);
 
+    // "melt" spectral magnitudes downwards
     for (size_t i = 1; i < count; ++i)
     {
       band_t& band = generator_->get_band(count - i);
       filter_scratch_[i-1] = band.magnitude();
-      
-      //"melt" some of this band's energy into the band below.
-      // const size_t mi = i == 1 ? count - 1 : i-1;
-      // band_t& target = generator_->get_band(mi);
-      // float bmag = band.magnitude();
-      // target.set_magnitude(target.magnitude() + bmag*mlt);
-      // band.set_magnitude(bmag - bmag*mlt);
     }
 
     const float mhz = vessl::math::lerp(sample_rate_*0.49f, sample_rate_*0.25f, mlt);
@@ -199,17 +197,21 @@ private:
       band.set_magnitude(filter_scratch_[i-1]);
     }
 
+    smear_lfo_phase_ += static_cast<size_t>(smear_lfo_step_*smr);
+    const float smear_val = smear_lfo_.evaluate(smear_lfo_phase_);
+    const float smear_mod = vessl::math::abs(smear_val)*mot;
+    const bool smear_up = smear_val > 0;
+
     float* scratch = filter_scratch_.data();
     for (size_t i = 1; i < count; ++i)
     {
-      band_t& band = generator_->get_band(i);
+      const size_t bidx = smear_up ? i : count - i;
+      band_t& band = generator_->get_band(bidx);
       complex_t cmplx = band.to_complex();
       *scratch++ = cmplx.r;
       *scratch++ = cmplx.i;
     }
 
-    smear_lfo_phase_ += smear_lfo_step_;
-    float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_) * smr;
     const float hz = 20.f + sample_rate_*0.25*smear_mod;
     vessl::filtering::args smr_args(sample_rate_, hz, vessl::filtering::q::butterworth<float>(), vessl::gain_t(0.0f));
     smear_flt_.process(filter_scratch_.data(), filter_scratch_.data(), (count-1)*2, smr_args);
@@ -217,9 +219,11 @@ private:
     scratch = filter_scratch_.data();
     for (size_t i = 1; i < count; ++i)
     {
-      band_t& band = generator_->get_band(i);
+      const size_t bidx = smear_up ? i : count - i;
+      band_t& band = generator_->get_band(bidx);
       const float re = *scratch++;
       const float im = *scratch++;
+      // apply damping to the reconstruction
       complex_t cmplx(re*dmp, im*dmp);
       band.set_complex(cmplx);
     }
@@ -258,6 +262,7 @@ private:
     vessl::analog_p damping;
     vessl::analog_p smear;
     vessl::analog_p melt;
+    vessl::analog_p motion;
     vessl::analog_p volume;
   } params_;
   

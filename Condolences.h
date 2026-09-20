@@ -34,7 +34,7 @@ DESCRIPTION:
 */
 
 template<typename T, uint16_t SpectrumSize, uint8_t Overlap>
-class Condolences : public vessl::unit_processor<T>, public vessl::plist<8>
+class Condolences : public vessl::unit_processor<T>, public vessl::plist<9>
 {
 public:
   using sample_t     = T;
@@ -102,6 +102,7 @@ public:
   [[nodiscard]] Parameter spread() const { return params_.spread("spread", 'r'); }
   [[nodiscard]] Parameter smear() const { return params_.smear("smear", 'e'); }
   [[nodiscard]] Parameter melt() const { return params_.melt("melt", 'm'); }
+  [[nodiscard]] Parameter motion() const { return params_.motion("motion", 'o'); }
   [[nodiscard]] Parameter sensitivity() const { return params_.response("sensitivity", 't'); }
   [[nodiscard]] Parameter decay() const { return params_.decay("decay", 'c'); }
   
@@ -127,6 +128,7 @@ public:
     spread_   = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
     response_ = params_.response.value;
     melt_     = params_.melt.value;
+    motion_   = params_.motion.value;
     damping_  = get_damping(params_.decay.value, 0.f);
 
     density_ = vessl::math::constrain(params_.density.value, static_cast<analog_t>(DensityMin), static_cast<analog_t>(DensityMax));
@@ -143,6 +145,7 @@ public:
     spectral_gen_->smear() = smear_.value;
     spectral_gen_->damping() = damping_.value;
     spectral_gen_->melt() = melt_.value;
+    spectral_gen_->motion() = motion_.value;
     spectral_gen_->volume() = volume_.value;
 
     const size_t string_count = vessl::math::max(static_cast<size_t>(density_.value), 4ull);
@@ -319,6 +322,7 @@ private:
     vessl::analog_p spread;
     vessl::analog_p smear;
     vessl::analog_p melt;
+    vessl::analog_p motion;
     vessl::analog_p response;
     vessl::analog_p decay;
   } params_;
@@ -329,6 +333,7 @@ private:
   Smoother spread_;
   Smoother smear_;
   Smoother melt_;
+  Smoother motion_;
   Smoother damping_;
   Smoother response_;
   Smoother volume_;

@@ -34,7 +34,7 @@ DESCRIPTION:
 */
 
 template<typename T, uint16_t SpectrumSize, uint8_t Overlap>
-class Condolences : public vessl::unit_processor<T>, public vessl::plist<9>
+class Condolences : public vessl::unit_processor<T>, public vessl::plist<10>
 {
 public:
   using sample_t     = T;
@@ -102,6 +102,7 @@ public:
   [[nodiscard]] Parameter spread() const { return params_.spread("spread", 'r'); }
   [[nodiscard]] Parameter smear() const { return params_.smear("smear", 'e'); }
   [[nodiscard]] Parameter melt() const { return params_.melt("melt", 'm'); }
+  [[nodiscard]] Parameter ripple() const { return params_.ripple("ripple", 'r'); }
   [[nodiscard]] Parameter motion() const { return params_.motion("motion", 'o'); }
   [[nodiscard]] Parameter sensitivity() const { return params_.response("sensitivity", 't'); }
   [[nodiscard]] Parameter decay() const { return params_.decay("decay", 'c'); }
@@ -128,6 +129,7 @@ public:
     spread_   = vessl::math::interp<vessl::math::easing::quad::out>(0.f, 1.f, params_.spread.value);
     response_ = params_.response.value;
     melt_     = params_.melt.value;
+    ripple_   = params_.ripple.value;
     motion_   = params_.motion.value;
     damping_  = get_damping(params_.decay.value, 0.f);
 
@@ -145,6 +147,7 @@ public:
     spectral_gen_->smear() = smear_.value;
     spectral_gen_->damping() = damping_.value;
     spectral_gen_->melt() = melt_.value;
+    spectral_gen_->ripple() = ripple_.value;
     spectral_gen_->motion() = motion_.value;
     spectral_gen_->volume() = volume_.value;
 
@@ -278,8 +281,10 @@ protected:
       case 3: return spread();
       case 4: return smear();
       case 5: return melt();
-      case 6: return sensitivity();
-      case 7: return decay();
+      case 6: return ripple();
+      case 7: return motion();
+      case 8: return sensitivity();
+      case 9: return decay();
       default: return Parameter::none();
     }
   }
@@ -323,6 +328,7 @@ private:
     vessl::analog_p spread;
     vessl::analog_p smear;
     vessl::analog_p melt;
+    vessl::analog_p ripple;
     vessl::analog_p motion;
     vessl::analog_p response;
     vessl::analog_p decay;
@@ -334,6 +340,7 @@ private:
   Smoother spread_;
   Smoother smear_;
   Smoother melt_;
+  Smoother ripple_;
   Smoother motion_;
   Smoother damping_;
   Smoother response_;

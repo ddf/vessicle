@@ -19,7 +19,8 @@ public:
   using size_t = vessl::size_t;
   using phase_t = vessl::phase_t;
   using complex_t = vessl::transform::complex<float>;
-  using RippleLfo = vessl::sample::waves::unipolar::triangle<float>;
+  // we evaluate this in a for loop, so want to use the faster lut-based version.
+  using RippleLfo = vessl::sample::waves::unipolar::sine<vessl::q31>;
   using SmearLfo = vessl::sample::waves::bipolar::sine<float>;
   using SmearFilter = vessl::filtering::biquad<2>::high_pass<float>;
   using MeltFilter  = vessl::filtering::biquad<1>::low_pass<float>;
@@ -182,8 +183,8 @@ private:
     const float smr = vessl::math::max(params_.smear.value, 0.f);
     const float mlt = params_.melt.value;
     const float ripv = vessl::math::constrain(params_.ripple.value, 0.f, 1.f);
-    const float ripf = 0.5f + ripv * 1.5f;
-    const float ripd = vessl::math::interp<vessl::math::easing::expo::out>(0.f, 0.025f, ripv);
+    const float ripf = smr * 3.f;
+    const vessl::q31 ripd = vessl::cast<vessl::q31>(vessl::math::lerp(0.f, 0.025f, ripv));
     const float mot = vessl::math::max(params_.motion.value, 0.f);
     const float dmp = vessl::math::constrain(params_.damping.value + mot*0.05f + mlt*0.05f, 0.0001f, 0.9999f);
 
@@ -196,7 +197,6 @@ private:
 
     const float mhz = vessl::math::lerp(sample_rate_*0.49f, sample_rate_*0.25f, mlt);
     vessl::filtering::args mlt_args(sample_rate_, mhz, vessl::filtering::q::butterworth<float>(), vessl::gain_t(0.0f));
-    // apply melt
     melt_flt_.process(filter_scratch_.data(), filter_scratch_.data(), count-1, mlt_args);
 
     for (size_t i = 1; i < count; ++i)
@@ -204,12 +204,12 @@ private:
       band_t& band = generator_->get_band(count - i);
 
       // apply ripple
-      const float m = filter_scratch_[i-1];
+      const vessl::q31 m = vessl::cast<vessl::q31>(filter_scratch_[i-1]);
       ripple_lfo_phase_ += static_cast<phase_t>(ripple_lfo_step_*ripf);
       const phase_t rp = vessl::cast<phase_t>(m);
-      const float r = ripple_lfo_.evaluate(ripple_lfo_phase_+rp);
-      const float mr = vessl::math::lerp(m, r, ripd);
-      band.set_magnitude(mr);
+      const vessl::q31 r = ripple_lfo_.evaluate(ripple_lfo_phase_+rp);
+      const vessl::q31 mr = vessl::math::lerp(m, r, ripd);
+      band.set_magnitude(vessl::cast<float>(mr));
     }
 
     smear_lfo_phase_ += static_cast<size_t>(smear_lfo_step_*smr);
@@ -242,34 +242,6 @@ private:
       complex_t cmplx(re*dmp, im*dmp);
       band.set_complex(cmplx);
     }
-
-    // smear_lfo_phase_ += smear_lfo_step;
-    // float smear_mod = smear_lfo_.evaluate(smear_lfo_phase_)*(smear_bands_max/2);
-    // float smear_scale = vessl::math::interp<vessl::math::easing::expo::out>(8.0f, 0.125f, dmp);
-    // float smear_amt = params_.spread.value * smear_scale * (1.f / Overlap);
-    // const size_t smear_width = static_cast<size_t>(smear_bands_max/2 + smear_mod) * 2;
-    // if (smear_width > 0 && smear_amt > 0)
-    // {
-    //   for (size_t i = 2 + smear_width; i < count/2 - smear_width; i+=2)
-    //   {
-    //     band_t& band = generator_->get_band(i);
-        
-    //     // "smear" the spectrum contents by blending nearby bands
-    //     const size_t li = i / smear_width;
-    //     const size_t hi = i * smear_width;
-    //     band_t lob = li > 0 ? generator_->get_band(li) : band_t();
-    //     band_t hib = hi < count ? generator_->get_band(hi) : band_t();
-
-    //     lob.scale(smear_amt);
-    //     hib.scale(smear_amt);
-    //     band.add(lob);
-    //     band.add(hib);
-
-    //     // doing this nerfs the decay effect when smear is turned up.
-    //     //float mag = band.magnitude();
-    //     //band.scale(mag > 0.8f ? 0.8f - smear_amt*2 : 1.0f - smear_amt*2);
-    //   }
-    // }
   }
 
   struct 

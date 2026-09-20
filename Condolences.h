@@ -174,12 +174,13 @@ public:
           excite(tbi, fbi, response);
 
           // spread strings
+          static constexpr size_t ts = SpectrumSize / AnalysisSize;
           {
             response *= spread_.value;
             const size_t fbi0 = fbi-1;
             const size_t fbi1 = fbi+1;
-            const size_t tbi0 = tbi-1; // f2t(fbi-1);
-            const size_t tbi1 = tbi+1; //f2t(fbi+1);
+            const size_t tbi0 = tbi - ts; // f2t(fbi-1, shift_.value);
+            const size_t tbi1 = tbi + ts; // f2t(fbi+1, shift_.value);
             excite(tbi0, fbi0, response);
             excite(tbi1, fbi1, response);
           }
@@ -188,8 +189,8 @@ public:
             response *= spread_.value;
             const size_t fbi0 = fbi-2;
             const size_t fbi1 = fbi+2;
-            const size_t tbi0 = tbi-2; // f2t(fbi-2);
-            const size_t tbi1 = tbi+2; // f2t(fbi+2);
+            const size_t tbi0 = tbi - 2*ts; // f2t(fbi-2, shift_.value);
+            const size_t tbi1 = tbi + 2*ts; // f2t(fbi+2, shift_.value);
             excite(tbi0, fbi0, response);
             excite(tbi1, fbi1, response);
           }

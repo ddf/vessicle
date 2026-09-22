@@ -20,7 +20,7 @@ public:
   using phase_t = vessl::phase_t;
   using complex_t = vessl::transform::complex<float>;
   // we evaluate this in a for loop, so want to use the faster lut-based version.
-  using RippleLfo = vessl::sample::waves::unipolar::sine<vessl::q31>;
+  using RippleLfo = vessl::sample::waves::bipolar::sine<vessl::q31>;
   using SmearLfo = vessl::sample::waves::bipolar::sine<float>;
   using SmearFilter = vessl::filtering::biquad<2>::high_pass<float>;
   using MeltFilter  = vessl::filtering::biquad<1>::low_pass<float>;
@@ -184,9 +184,12 @@ private:
     const float mlt = params_.melt.value;
     const float ripv = vessl::math::constrain(params_.ripple.value, 0.f, 1.f);
     const float ripf = smr * 3.f;
-    const vessl::q31 ripd = vessl::cast<vessl::q31>(vessl::math::lerp(0.f, 0.025f, ripv));
     const float mot = vessl::math::max(params_.motion.value, 0.f);
     const float dmp = vessl::math::constrain(params_.damping.value + mot*0.05f + mlt*0.05f, 0.0001f, 0.9999f);
+
+    const vessl::q31 ripd = vessl::cast<vessl::q31>(vessl::math::lerp(0.f, 0.05f, ripv));
+    const vessl::q31 rips = vessl::cast<vessl::q31>(0.1f + smr*0.05f);
+    static constexpr vessl::q31 ript = vessl::cast<vessl::q31>(0.01f);
 
     // "melt" spectral magnitudes downwards
     for (size_t i = 1; i < count; ++i)
@@ -204,12 +207,15 @@ private:
       band_t& band = generator_->get_band(count - i);
 
       // apply ripple
-      const vessl::q31 m = vessl::cast<vessl::q31>(filter_scratch_[i-1]);
+      // thru testing discovered that magnitudes tend to be 10x larger than q31 range,
+      // so we scale down before conversion and back up after running ripple.
+      const vessl::q31 m = vessl::cast<vessl::q31>(filter_scratch_[i-1]*0.1f);
+      //const phase_t rp = vessl::cast<phase_t>(m) >> 4;
+      const vessl::q31 r = ripple_lfo_.evaluate(ripple_lfo_phase_)*rips;
+      const vessl::q31 mr = m > ript ? vessl::math::lerp(m, m+r, ripd) : m;
+      band.set_magnitude(vessl::cast<float>(mr)*10.f);
+
       ripple_lfo_phase_ += static_cast<phase_t>(ripple_lfo_step_*ripf);
-      const phase_t rp = vessl::cast<phase_t>(m);
-      const vessl::q31 r = ripple_lfo_.evaluate(ripple_lfo_phase_+rp);
-      const vessl::q31 mr = vessl::math::lerp(m, r, ripd);
-      band.set_magnitude(vessl::cast<float>(mr));
     }
 
     smear_lfo_phase_ += static_cast<size_t>(smear_lfo_step_*smr);

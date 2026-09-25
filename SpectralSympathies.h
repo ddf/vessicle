@@ -185,7 +185,7 @@ private:
     const float ripv = vessl::math::constrain(params_.ripple.value, 0.f, 1.f);
     const float ripf = smr * 3.f;
     const float mot = vessl::math::max(params_.motion.value, 0.f);
-    const float dmp = vessl::math::constrain(params_.damping.value + mot*0.05f + mlt*0.05f, 0.0001f, 0.9999f);
+    const float dmp = vessl::math::constrain(params_.damping.value, 0.0001f, 0.9999f);
 
     const vessl::q31 ripd = vessl::cast<vessl::q31>(vessl::math::lerp(0.f, 0.05f, ripv));
     const vessl::q31 rips = vessl::cast<vessl::q31>(0.1f + smr*0.05f);

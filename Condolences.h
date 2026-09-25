@@ -52,6 +52,7 @@ public:
   using Frequency    = vessl::frequency<analog_t>;
 
   static constexpr size_t AnalysisSize = SpectrumSize/Overlap;
+  static constexpr size_t BlockSize = Sympathies::overlap_size/2;
 
   // for clamping the param
   static constexpr size_t DensityMin = 4;
@@ -82,7 +83,7 @@ public:
   , input_fft_(AnalysisSize)
   , spectral_gen_(spectral_generator)
   , output_buffer_(output_buffer_data, Sympathies::overlap_size)
-  , input_buffer_write_idx_(0)
+  , input_buffer_write_idx_(AnalysisSize-BlockSize)
   , output_buffer_read_idx_(0)
   {
     params_.response.value = 0.1f;
@@ -171,6 +172,9 @@ public:
          *        and then use the first string_count strings. buuuut this will be much slower.  
          */
         size_t step = DensityMax / string_count;
+        static constexpr float mag_scale = 1.f;
+        float thresh = mag_scale -  static_cast<float>(string_count) * mag_scale / DensityMax;
+        thresh *= thresh;
         for(size_t sidx = 0; sidx < string_count; sidx += step)
         {
           const float shz = strings[sidx];
@@ -181,52 +185,56 @@ public:
           static constexpr float output_band_inv = 1.0f / output_band_count;
           if (fbi > 0 && fbi < analysis_band_count)
           {
-            const float tbf = spectral_gen_->get_band_index(shz*shift_.value) * output_band_inv;
-            const float tbl = vessl::math::interp<vessl::math::easing::expo::out>(0.f, 1.f, tbf);
-            const size_t tbi = static_cast<size_t>(vessl::math::lerp(tbf, tbl, spacing_.value)*output_band_count);
-
-            // main string
             complex_t fin = input_spectrum_[fbi];
-            float response = response_.value;
-            excite(tbi, fin, response);
-
-            // spread strings
-            static constexpr size_t ts = 1; // SpectrumSize / AnalysisSize;
+            if (fin.magnitude_sqr() > thresh)
             {
-              response *= spread_.value;
-              fin.scale(spread_.value);
-              const size_t tbi0 = tbi - ts; // f2t(fbi-1, shift_.value);
-              const size_t tbi1 = tbi + ts; // f2t(fbi+1, shift_.value);
-              excite(tbi0, fin, response);
-              excite(tbi1, fin, response);
+              const float tbf = spectral_gen_->get_band_index(shz*shift_.value) * output_band_inv;
+              const float tbl = vessl::math::interp<vessl::math::easing::expo::out>(0.f, 1.f, tbf);
+              const size_t tbi = static_cast<size_t>(vessl::math::lerp(tbf, tbl, spacing_.value)*output_band_count);
+
+              // main string
+
+              float response = response_.value;
+              excite(tbi, fin, response);
+
+              // spread strings
+              static constexpr size_t ts = 1; // SpectrumSize / AnalysisSize;
+              {
+                response *= spread_.value;
+                fin.scale(spread_.value);
+                const size_t tbi0 = tbi - ts; // f2t(fbi-1, shift_.value);
+                const size_t tbi1 = tbi + ts; // f2t(fbi+1, shift_.value);
+                excite(tbi0, fin, response);
+                excite(tbi1, fin, response);
+              }
+
+              {
+                response *= spread_.value;
+                fin.scale(spread_.value);
+                const size_t tbi0 = tbi - 2*ts; // f2t(fbi-2, shift_.value);
+                const size_t tbi1 = tbi + 2*ts; // f2t(fbi+2, shift_.value);
+                excite(tbi0, fin, response);
+                excite(tbi1, fin, response);
+              }
+
+              {
+                response *= spread_.value;
+                fin.scale(spread_.value);
+                const size_t tbi0 = tbi - 3*ts; // f2t(fbi-2, shift_.value);
+                const size_t tbi1 = tbi + 3*ts; // f2t(fbi+2, shift_.value);
+                excite(tbi0, fin, response);
+                excite(tbi1, fin, response);
+              }
+
+              {
+                response *= spread_.value;
+                fin.scale(spread_.value);
+                const size_t tbi0 = tbi - 4*ts; // f2t(fbi-2, shift_.value);
+                const size_t tbi1 = tbi + 4*ts; // f2t(fbi+2, shift_.value);
+                excite(tbi0, fin, response);
+                excite(tbi1, fin, response);
+              }
             }
-
-            {
-              response *= spread_.value;
-              fin.scale(spread_.value);
-              const size_t tbi0 = tbi - 2*ts; // f2t(fbi-2, shift_.value);
-              const size_t tbi1 = tbi + 2*ts; // f2t(fbi+2, shift_.value);
-              excite(tbi0, fin, response);
-              excite(tbi1, fin, response);
-            }
-
-            // {
-            //   response *= spread_.value;
-            //   fin.scale(spread_.value);
-            //   const size_t tbi0 = tbi - 3*ts; // f2t(fbi-2, shift_.value);
-            //   const size_t tbi1 = tbi + 3*ts; // f2t(fbi+2, shift_.value);
-            //   excite(tbi0, fin, response);
-            //   excite(tbi1, fin, response);
-            // }
-
-            // {
-            //   response *= spread_.value;
-            //   fin.scale(spread_.value);
-            //   const size_t tbi0 = tbi - 4*ts; // f2t(fbi-2, shift_.value);
-            //   const size_t tbi1 = tbi + 4*ts; // f2t(fbi+2, shift_.value);
-            //   excite(tbi0, fin, response);
-            //   excite(tbi1, fin, response);
-            // }
           }
         }
 

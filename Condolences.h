@@ -34,7 +34,7 @@ DESCRIPTION:
 */
 
 template<typename T, uint16_t SpectrumSize, uint8_t Overlap>
-class Condolences : public vessl::unit_processor<T>, public vessl::plist<10>
+class Condolences : public vessl::unit_processor<T>, public vessl::plist<11>
 {
 public:
   using sample_t     = T;
@@ -103,7 +103,8 @@ public:
   [[nodiscard]] Parameter spread() const { return params_.spread("spread", 'r'); }
   [[nodiscard]] Parameter smear() const { return params_.smear("smear", 'e'); }
   [[nodiscard]] Parameter melt() const { return params_.melt("melt", 'm'); }
-  [[nodiscard]] Parameter ripple() const { return params_.ripple("ripple", 'r'); }
+  [[nodiscard]] Parameter ripple_amount() const { return params_.ripple("ripple amount", 'R'); }
+  [[nodiscard]] Parameter ripple_depth() const { return params_.rippld("ripple depth", 'D'); } 
   [[nodiscard]] Parameter motion() const { return params_.motion("motion", 'o'); }
   [[nodiscard]] Parameter sensitivity() const { return params_.response("sensitivity", 't'); }
   [[nodiscard]] Parameter damping() const { return params_.damping("damping", 'p'); }
@@ -136,6 +137,7 @@ public:
     response_ = params_.response.value;
     melt_     = params_.melt.value;
     ripple_   = params_.ripple.value;
+    rippld_   = params_.rippld.value;
     motion_   = params_.motion.value;
     damping_  = params_.damping.value;
 
@@ -153,7 +155,8 @@ public:
     spectral_gen_->smear() = smear_.value;
     spectral_gen_->damping() = damping_.value;
     spectral_gen_->melt() = melt_.value;
-    spectral_gen_->ripple() = ripple_.value;
+    spectral_gen_->ripple_amount() = ripple_.value;
+    spectral_gen_->ripple_depth() = rippld_.value;
     spectral_gen_->motion() = motion_.value;
     spectral_gen_->volume() = volume_.value;
 
@@ -320,10 +323,11 @@ protected:
       case 3: return spread();
       case 4: return smear();
       case 5: return melt();
-      case 6: return ripple();
-      case 7: return motion();
-      case 8: return sensitivity();
-      case 9: return damping();
+      case 6: return ripple_amount();
+      case 7: return ripple_depth();
+      case 8: return motion();
+      case 9: return sensitivity();
+      case 10: return damping();
       default: return Parameter::none();
     }
   }
@@ -338,6 +342,7 @@ private:
     vessl::analog_p smear;
     vessl::analog_p melt;
     vessl::analog_p ripple;
+    vessl::analog_p rippld;
     vessl::analog_p motion;
     vessl::analog_p response;
     vessl::analog_p damping;
@@ -350,6 +355,7 @@ private:
   Smoother smear_;
   Smoother melt_;
   Smoother ripple_;
+  Smoother rippld_;
   Smoother motion_;
   Smoother damping_;
   Smoother response_;

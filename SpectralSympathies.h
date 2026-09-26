@@ -9,7 +9,7 @@
 #include "vessl/vessl.h"
 
 template<vessl::size_t SpectrumSize, vessl::size_t Overlap = 1>
-class SpectralSympathies : public vessl::unit_generator<float>, vessl::plist<6>
+class SpectralSympathies : public vessl::unit_generator<float>, vessl::plist<7>
 {
 public:
   using SpectralGen = SpectralGenerator<float, SpectrumSize, Overlap>;
@@ -72,7 +72,8 @@ public:
   VESSL_INLINE Parameter smear() const { return params_.smear("smear", 's'); }
   VESSL_INLINE Parameter damping() const { return params_.damping("damping", 'd'); }
   VESSL_INLINE Parameter melt() const { return params_.melt("melt", 'm'); }
-  VESSL_INLINE Parameter ripple() const { return params_.ripple("ripple", 'r'); }
+  VESSL_INLINE Parameter ripple_amount() const { return params_.ripple("ripple amount", 'r'); }
+  VESSL_INLINE Parameter ripple_depth() const { return params_.rippld("ripple depth", 'D'); }
   VESSL_INLINE Parameter motion() const { return params_.motion("motion", 'o'); }
   VESSL_INLINE Parameter volume() const { return params_.volume("volume", 'v'); }
 
@@ -169,9 +170,10 @@ protected:
       case 0: return damping();
       case 1: return smear();
       case 2: return melt();
-      case 3: return ripple();
-      case 4: return motion();
-      case 5: return volume();
+      case 3: return ripple_amount();
+      case 4: return ripple_depth();
+      case 5: return motion();
+      case 6: return volume();
       default: return Parameter::none();
     }
   }
@@ -182,14 +184,14 @@ private:
     const size_t count = SpectrumSize/2;
     const float smr = vessl::math::max(params_.smear.value, 0.f);
     const float mlt = params_.melt.value;
-    const float ripv = vessl::math::constrain(params_.ripple.value, 0.f, 1.f);
+    const float ripav = vessl::math::constrain(params_.ripple.value, 0.f, 1.f);
+    const float ripdv = vessl::math::constrain(params_.rippld.value, 0.f, 1.f);
     const float ripf = smr * 3.f;
     const float mot = vessl::math::max(params_.motion.value, 0.f);
     const float dmp = vessl::math::constrain(params_.damping.value, 0.0001f, 0.9999f);
 
-    const vessl::q31 ripd = vessl::cast<vessl::q31>(vessl::math::lerp(0.f, 0.05f, ripv));
-    const vessl::q31 rips = vessl::cast<vessl::q31>(0.1f + smr*0.05f);
-    static constexpr vessl::q31 ript = vessl::cast<vessl::q31>(0.01f);
+    const vessl::q31 ripa = vessl::cast<vessl::q31>(ripav);
+    const vessl::q31 ripd = vessl::cast<vessl::q31>(ripdv);
 
     // "melt" spectral magnitudes downwards
     for (size_t i = 1; i < count; ++i)
@@ -211,8 +213,8 @@ private:
       // so we scale down before conversion and back up after running ripple.
       const vessl::q31 m = vessl::cast<vessl::q31>(filter_scratch_[i-1]*0.1f);
       //const phase_t rp = vessl::cast<phase_t>(m) >> 4;
-      const vessl::q31 r = ripple_lfo_.evaluate(ripple_lfo_phase_)*rips;
-      const vessl::q31 mr = m > ript ? vessl::math::lerp(m, m+r, ripd) : m;
+      const vessl::q31 r = ripple_lfo_.evaluate(ripple_lfo_phase_)*ripd*m;
+      const vessl::q31 mr = vessl::math::lerp(m, m+r, ripa);
       band.set_magnitude(vessl::cast<float>(mr)*10.f);
 
       ripple_lfo_phase_ += static_cast<phase_t>(ripple_lfo_step_*ripf);
@@ -256,6 +258,7 @@ private:
     vessl::analog_p smear;
     vessl::analog_p melt;
     vessl::analog_p ripple;
+    vessl::analog_p rippld;
     vessl::analog_p motion;
     vessl::analog_p volume;
   } params_;

@@ -170,15 +170,10 @@ public:
         input_buffer_.multiply(input_window_, input_analysis_);
         input_fft_.forward(input_analysis_, input_spectrum_);
 
-        /** @todo What we were doing was not good for melodic material.
-         *        I suspect best results will be to sort the spectrum by magnitude 
-         *        and then use the first string_count strings. buuuut this will be much slower.  
-         */
-        size_t step = DensityMax / string_count;
-        static constexpr float mag_scale = 1.f;
-        float thresh = mag_scale -  static_cast<float>(string_count) * mag_scale / DensityMax;
+        static constexpr float mag_scale = 5.f;
+        float thresh = mag_scale - static_cast<float>(string_count) * mag_scale / DensityMax;
         thresh *= thresh;
-        for(size_t sidx = 0; sidx < string_count; sidx += step)
+        for(size_t sidx = 0; sidx < DensityMax; ++sidx)
         {
           const float shz = strings[sidx];
           const size_t fbi = get_band_index(shz);

@@ -236,15 +236,19 @@ public:
           }
         }
 
-        /** @todo figure out why this breaks the audio thread */
+        // @todo figure out why this kills audio generation
+        // if the overlap size is smaller than our analysis size,
+        // we can update the spectrum more frequently.
+        // we copy the back portion of our input buffer to the front of the buffer
+        // and resume recording overlap_size samples from the end of the buffer.
         // if constexpr(Sympathies::overlap_size < AnalysisSize)
         // {
-        //   const size_t count = AnalysisSize - Sympathies::overlap_size;
-        //   for(size_t s = 0; s < count; ++s)
+        //   for(size_t s = Sympathies::overlap_size; s < AnalysisSize; ++s)
         //   {
-        //     input_buffer_[s] = input_buffer_[s+Sympathies::overlap_size];
+        //     size_t t = s - Sympathies::overlap_size;
+        //     input_buffer_[t] = input_buffer_[s];
         //   }
-        //   input_buffer_write_idx_ = count;
+        //   input_buffer_write_idx_ = AnalysisSize - Sympathies::overlap_size;
         // }
         // else
         {

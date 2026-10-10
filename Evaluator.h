@@ -7,7 +7,7 @@
 // Evaluator operates on sample frames
 // because the underlying Program requires this.
 template<typename T, vessl::size_t N>
-class Evaluator : public vessl::unit_processor<vessl::sample::frame<T,N>>, public vessl::plist<3>
+class Evaluator : public vessl::unit_processor<vessl::sample::frame<T,N>>, public vessl::plist<11>
 {
 public:
   using size_t   = vessl::size_t;
@@ -35,6 +35,7 @@ public:
   [[nodiscard]] Parameter tempo() const { return params_.tempo("Tempo", 'q'); }
   [[nodiscard]] Parameter bits() const { return params_.bit_depth("Bits", 'w'); }
   [[nodiscard]] Parameter rate() const { return params_.rate("Rate", 'r'); }
+  [[nodiscard]] Parameter v(size_t idx) const { return idx < 8 ? params_.v[idx]("V", '0' + idx) : Parameter::none(); }
 
   [[nodiscard]] const vessl::parameter_list& parameters() const override { return *this; }
 
@@ -56,6 +57,8 @@ public:
 
   [[nodiscard]] Program::CompileError last_compile_error() const { return compile_result_; }
   [[nodiscard]] int last_compile_error_position() const { return compile_error_position_; }
+  [[nodiscard]] Program::RuntimeError last_runtime_error() const { return run_result_; }
+  [[nodiscard]] Program::Value get(Program::Char var) const { return program_->Get(var); }
 
   output_t process(const input_t& in) override
   {
@@ -70,6 +73,10 @@ public:
       program_->Set('q', (Program::Value)vessl::math::round(params_.tick.value / qdenom));
       program_->Set('w', range);
       program_->Set('~', (Program::Value)sample_rate_);
+      for(size_t vi = 0; vi < 8; ++vi)
+      {
+        program_->SetVC(vi, static_cast<Program::Value>(255.f * params_.v[vi].value));
+      }
       for(size_t i = 0; i < N; ++i)
       {
         // @todo this assumes input is floating-point, need better conversion
@@ -97,6 +104,7 @@ protected:
       case 1: return tempo();
       case 2: return bits();
       case 3: return rate();
+      default: return v(index - 3);
     }
 
     return Parameter::none();
@@ -109,6 +117,7 @@ private:
     vessl::analog_p tempo;
     vessl::param<uint8_t> bit_depth;
     vessl::analog_p rate;
+    vessl::analog_p v[8];
   } params_;
 
   analog_t sample_rate_;

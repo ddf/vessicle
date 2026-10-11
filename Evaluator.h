@@ -15,6 +15,7 @@ public:
   using input_t  = vessl::sample::frame<T,N>;
   using output_t = vessl::sample::frame<T,N>;
   using Parameter = vessl::parameter;
+  using Smoother = vessl::math::easing::smoother<float>;
   using Exec = Program::Executable<512, 4096>;
 
   Evaluator(const analog_t sample_rate)
@@ -66,8 +67,8 @@ public:
   {
     output_t out(0);
     { 
-      const Program::Value range = (Program::Value)1 << params_.bit_depth.value;
-      const float inv_range = 1.0f / range;
+      Program::Value range = static_cast<Program::Value>(vessl::math::pow(2.f, params_.bit_depth.value));
+      float inv_range = 1.0f / range;
 
       tick_phase_ += params_.rate.value;
       if (tick_phase_ >= 1.f)
@@ -101,7 +102,7 @@ public:
 
       for(size_t i = 0; i < N; ++i)
       {
-        float norm = (args_[i] & (range-1)) * inv_range; 
+        float norm = (args_[i] % range) * inv_range; 
         out.samples[i] = vessl::cast<T>(norm*2.f - 1.f);
       }
     }
@@ -128,7 +129,7 @@ private:
   {
     vessl::param<Program::Value> tick;
     vessl::analog_p tempo;
-    vessl::param<uint8_t> bit_depth;
+    vessl::analog_p bit_depth;
     vessl::analog_p rate;
     vessl::analog_p v[8];
   } params_;

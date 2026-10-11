@@ -51,6 +51,8 @@ namespace Program
 
 		Code code = RE_NONE;
 		Value value;
+
+		operator bool() {return code != RE_NONE; }
 	};
 
 	static const char * GetErrorString(RuntimeError error);
@@ -194,6 +196,7 @@ namespace Program
 
 		size_t ops_size; // how many ops we actuall have
 		size_t pc; // program counter, stored here because it can be changed by TRN and JMP
+		float  fc; // pre-computed coefficent for FRQ
 
 		// rng because rand() doesn't generate a large enough range
 		std::default_random_engine rng;

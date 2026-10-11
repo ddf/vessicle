@@ -794,10 +794,16 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Run(Value* results, const
 	const uint64_t icount = GetInstructionCount();
 	if (icount > 0)
 	{
+		// 3.023625 is a magic number arrived at by comparing our output to the Saw Wave in ReaSynth.
+		// 3.0 is what we'd expect to see if we were operating in floating point,
+		// but if we use 3.0 here, the pitch winds up being a little bit flat.
+		static constexpr float c = 4.f * 3.023625f;
+		fc = c * 44100.f / Get('~');
 		pc = 0;
-		for (; pc < icount && error.code == RuntimeError::RE_NONE; ++pc)
+		while (pc < icount && error.code == RuntimeError::RE_NONE)
 		{
 			error = Exec(ops[pc], results, size);
+			++pc;
 		}
 
 		// under error-free execution we should have either 1 or 0 values in the stack.
@@ -853,7 +859,7 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 	}
 	break;
 
-		// one operand - operand value is popped from the stack, result is pushed back on 
+	// one operand - operand value is popped from the stack, result is pushed back on 
 	case Op::PEK:
 	{
 		POP1;
@@ -897,10 +903,11 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 	{
 		POP1;
 		Value r = Get('w');
-		Value hr = r / 2;
-		r += 1;
-		double s = vessl::math::sin<double>(vessl::math::two_pi<double>() * ((double)(a%r) / r));
-		stack.push(Value(s*hr + hr));
+		float v = a%r;
+		vessl::phase_t p = vessl::cast<vessl::phase_t>(v/r);
+		vessl::q31_t q = vessl::math::sin<vessl::q31_t>(p);
+		float s = vessl::cast<float>(q)*0.5f + 0.5f;
+		stack.push(static_cast<Value>(s*r));
 	}
 	break;
 
@@ -922,11 +929,9 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 		}
 		else
 		{
-			// 3.023625 is a magic number arrived at by comparing our output to the Saw Wave in ReaSynth.
-			// 3.0 is what we'd expect to see if we were operating in floating point,
-			// but if we use 3.0 here, the pitch winds up being a little bit flat.
-			double f = round(4.0 * 3.023625 * pow(2.0, (double)a / 12.0) * (44100.0 / Get('~')));
-			stack.push((Value)f);
+			static constexpr float inv_oct = 1.0f / 12.f;
+			float f = vessl::math::round(fc * vessl::math::pow(2.0, static_cast<float>(a) * inv_oct));
+			stack.push(static_cast<Value>(f));
 		}
 	}
 	break;

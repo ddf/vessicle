@@ -59,11 +59,11 @@ public:
   [[nodiscard]] int last_compile_error_position() const { return compile_error_position_; }
   [[nodiscard]] Program::RuntimeError last_runtime_error() const { return run_result_; }
   [[nodiscard]] Program::Value get(Program::Char var) const { return exec_.Get(var); }
+  [[nodiscard]] size_t instruction_count() const { return exec_.GetInstructionCount(); }
 
   VESSL_INLINE output_t process(const input_t& in) override
   {
     output_t out(0);
-    //if (program_)
     {
       const Program::Value range = (Program::Value)1 << params_.bit_depth.value;
       const float inv_range = 1.0f / range;

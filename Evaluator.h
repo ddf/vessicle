@@ -15,11 +15,11 @@ public:
   using input_t  = vessl::sample::frame<T,N>;
   using output_t = vessl::sample::frame<T,N>;
   using Parameter = vessl::parameter;
+  using Exec = Program::Executable<512, 4096>;
 
   Evaluator(const analog_t sample_rate)
   : sample_rate_(sample_rate)
   , tick_phase_(0)
-  , program_(nullptr)
   {
     params_.tempo.value = 120;
     params_.bit_depth.value = 16;
@@ -28,7 +28,6 @@ public:
 
   ~Evaluator()
   {
-    delete program_;
   }
 
   [[nodiscard]] Parameter tick() const { return params_.tick("Tick", 't'); }
@@ -41,15 +40,16 @@ public:
 
   // return true if compilation succeeds.
   // on failure can retrive error code and error position from getters.
-  bool compile(const char* program_text, size_t memory_size)
+  bool compile(const char* program_text)
   {
-    delete program_;
+    std::vector<Program::Op> ops;
     compile_result_ = Program::CE_NONE;
     compile_error_position_ = -1;
-    program_ = Program::Compile(program_text, memory_size, compile_result_, compile_error_position_);
+    Program::Compile<512, 4096>(program_text, ops, compile_result_, compile_error_position_);
     bool success = compile_result_ == Program::CE_NONE;
     if (success)
     {
+      exec_.Load(ops, vessl::math::random::u32());
       params_.tick.value = 0;
     }
     return success;
@@ -58,34 +58,40 @@ public:
   [[nodiscard]] Program::CompileError last_compile_error() const { return compile_result_; }
   [[nodiscard]] int last_compile_error_position() const { return compile_error_position_; }
   [[nodiscard]] Program::RuntimeError last_runtime_error() const { return run_result_; }
-  [[nodiscard]] Program::Value get(Program::Char var) const { return program_->Get(var); }
+  [[nodiscard]] Program::Value get(Program::Char var) const { return exec_.Get(var); }
 
-  output_t process(const input_t& in) override
+  VESSL_INLINE output_t process(const input_t& in) override
   {
     output_t out(0);
-    if (program_)
+    //if (program_)
     {
       const Program::Value range = (Program::Value)1 << params_.bit_depth.value;
-      const double mdenom = sample_rate_ / 1000.0;
-      const double qdenom = (sample_rate_ / (params_.tempo.value / 60.0)) / 128.0;
-      program_->Set('t', params_.tick.value);
-      program_->Set('m', (Program::Value)vessl::math::round(params_.tick.value / mdenom));
-      program_->Set('q', (Program::Value)vessl::math::round(params_.tick.value / qdenom));
-      program_->Set('w', range);
-      program_->Set('~', (Program::Value)sample_rate_);
+      const float inv_range = 1.0f / range;
+      const float mdenom = 1000.f / sample_rate_;
+      const float qdenom = 128.f / (sample_rate_ / (params_.tempo.value / 60.f));
+      exec_['t'] = params_.tick.value;
+      exec_['m'] = (Program::Value)vessl::math::round(params_.tick.value * mdenom);
+      exec_['q'] = (Program::Value)vessl::math::round(params_.tick.value * qdenom);
+      exec_['w'] = range;
+      exec_['~'] = (Program::Value)sample_rate_;
+      
       for(size_t vi = 0; vi < 8; ++vi)
       {
-        program_->SetVC(vi, static_cast<Program::Value>(255.f * params_.v[vi].value));
+        exec_.SetVC(vi, static_cast<Program::Value>(255.f * params_.v[vi].value));
       }
+
       for(size_t i = 0; i < N; ++i)
       {
-        // @todo this assumes input is floating-point, need better conversion
-        program_args_[i] = (Program::Value)((in.samples[i] + 1) * (range / 2));
+        float norm = vessl::cast<float>(in.samples[i])*0.5f + 0.5f;
+        args_[i] = static_cast<Program::Value>(norm * (range-1));
       }
-      run_result_ = program_->Run(program_args_, 2);
+
+      run_result_ = exec_.Run(args_, N);
+
       for(size_t i = 0; i < N; ++i)
       {
-        out.samples[i] = (-1.0 + 2.0*((double)(program_args_[i] % range) / (range - 1)));
+        float norm = (args_[i] & (range-1)) * inv_range; 
+        out.samples[i] = vessl::cast<T>(norm*2.f - 1.f);
       }
       tick_phase_ += params_.rate.value;
       Program::Value tick_adv = static_cast<Program::Value>(tick_phase_);
@@ -122,8 +128,8 @@ private:
 
   analog_t sample_rate_;
   analog_t tick_phase_;
-  Program* program_;
-  Program::Value program_args_[N];
+  Exec     exec_;
+  Program::Value args_[N];
   Program::CompileError compile_result_;
   Program::RuntimeError run_result_;
   int compile_error_position_;

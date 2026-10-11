@@ -8,6 +8,8 @@
 #include "vessl/vessl.h"
 #include <cstring> // for memset
 
+namespace Program
+{
 static bool GetUnaryOp(char c, Program::Op::Code* outCode)
 {
 	switch(c)
@@ -29,6 +31,14 @@ static bool GetUnaryOp(char c, Program::Op::Code* outCode)
 	}
 }
 
+// static
+VESSL_INLINE Value GetAddress(const Char var, const size_t userMemorySize)
+{
+	// we static cast to unsigned char because we want to convert the variable
+	// to a memory offset that begins at 0.
+	return userMemorySize + static_cast<unsigned char>(var);
+}
+
 // used to store const values relating to [*], 
 // which allows for reading the sum of all inputs or writing the same value to all outputs.
 namespace Wildcard
@@ -37,32 +47,32 @@ namespace Wildcard
 	const Program::Value Value = -1;
 }
 
-Program::Program(const std::vector<Op>& inOps, const size_t userMemorySize, const size_t seed)
-	: ops(inOps)
-	, userMemSize(userMemorySize)
-	, memSize(userMemorySize + 256) // 256 to enough room for all possible values of Char
-	, rng(seed)
+template<size_t OpsMax, size_t MemSize>
+Executable<OpsMax, MemSize>::Executable()
+	: ops_size(0)
 {
-	mem = new Value[memSize];
-	memset(mem, 0, sizeof(Value)*memSize);
-	// initialize cc memory space - we want to accurately represent the midi device
-	memset(cc, 0, sizeof(cc));
-	memset(vc, 0, sizeof(vc));
-	// default sample rate so the F operator will function
-	Set('~', 44100);
 }
 
-Program::~Program()
+template <size_t OpsMax, size_t MemSize>
+inline bool Executable<OpsMax, MemSize>::Load(const std::vector<Op> &inOps, const size_t seed)
 {
-	delete[] mem;
-}
-
-// static
-Program::Value Program::GetAddress(const Char var, const size_t userMemorySize)
-{
-	// we static cast to unsigned char because we want to convert the variable
-	// to a memory offset that begins at 0.
-	return userMemorySize + static_cast<unsigned char>(var);
+	bool valid_ops = inOps.size() > 0 && inOps.size() < OpsMax;
+	if (valid_ops)
+	{
+		ops_size = inOps.size();
+		for(size_t i = 0; i < ops_size; ++i)
+		{
+			ops[i] = inOps[i];
+		}
+		memset(mem, 0, sizeof(Value)*memSize);
+		// initialize cc memory space - we want to accurately represent the midi device
+		memset(cc, 0, sizeof(cc));
+		memset(vc, 0, sizeof(vc));
+		// default sample rate so the F operator will function
+		Set('~', 44100);
+		rng.seed(seed);
+	}
+	return valid_ops;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -70,7 +80,7 @@ Program::Value Program::GetAddress(const Char var, const size_t userMemorySize)
 //////////////////////////////////////////////////////////////////////////
 #pragma region Compilation
 
-const char * Program::GetErrorString(Program::CompileError error)
+static const char * GetErrorString(CompileError error)
 {
 	switch (error)
 	{
@@ -98,6 +108,8 @@ const char * Program::GetErrorString(Program::CompileError error)
 	case Program::CE_MISSING_PUT:
 		return "The program does not output any values.\n"
 			   "Assign something to [0], [1], or [*].";
+	case Program::CE_TOO_MANY_OPERATIONS:
+		return "The compiled program has too many operations";
 	default:
 		return "Unknown";
 	}
@@ -676,10 +688,11 @@ static int Parse(CompilationState& state)
 	return 0;
 }
 
-Program* Program::Compile(const Char* source, const size_t userMemorySize, CompileError& outError, int& outErrorPosition)
+template<size_t OpsMax, size_t MemSize>
+size_t Program::Compile(const Char* source, std::vector<Op>& outOps, CompileError& outError, int& outErrorPosition)
 {
-	Program* program = nullptr;
-	CompilationState state(source, userMemorySize);
+	outOps.clear();
+	CompilationState state(source, MemSize);
 
 	while (*state != '\0')
 	{
@@ -703,6 +716,10 @@ Program* Program::Compile(const Char* source, const size_t userMemorySize, Compi
 		else if (*state != '\0')
 		{
 			state.error = CE_UNEXPECTED_CHAR;
+		}
+		else if (state.ops.size() > OpsMax)
+		{
+			state.error = CE_TOO_MANY_OPERATIONS;
 		}
 		// make sure the program includes at least one PUT.
 		// we consider it a compilation error if it doesn't
@@ -728,7 +745,7 @@ Program* Program::Compile(const Char* source, const size_t userMemorySize, Compi
 	{
 		outError = CE_NONE;
 		outErrorPosition = -1;
-		program = new Program(state.ops, userMemorySize, rand());
+		outOps = state.ops;
 	}
 	else
 	{
@@ -736,7 +753,7 @@ Program* Program::Compile(const Char* source, const size_t userMemorySize, Compi
 		outErrorPosition = state.parsePos;
 	}
 
-	return program;
+	return outOps.size();
 }
 #pragma endregion
 
@@ -745,39 +762,40 @@ Program* Program::Compile(const Char* source, const size_t userMemorySize, Compi
 //////////////////////////////////////////////////////////////////////////
 #pragma region Execution
 
-const char * Program::GetErrorString(Program::RuntimeError error)
+const char * GetErrorString(Program::RuntimeError error)
 {
-	switch (error)
+	switch (error.code)
 	{
-	case RE_NONE:
+	case RuntimeError::RE_NONE:
 		return "None";
-	case RE_DIVIDE_BY_ZERO:
+	case RuntimeError::RE_DIVIDE_BY_ZERO:
 		return "Divide by zero";
-	case RE_MISSING_OPERAND:
+	case RuntimeError::RE_MISSING_OPERAND:
 		return "Missing operand";
-	case RE_MISSING_OPCODE:
+	case RuntimeError::RE_MISSING_OPCODE:
 		return "Unimplemented opcode";
-	case RE_INCONSISTENT_STACK:
+	case RuntimeError::RE_INCONSISTENT_STACK:
 		return "Inconsistent stack";
-	case RE_EMPTY_PROGRAM:
+	case RuntimeError::RE_EMPTY_PROGRAM:
 		return "Empty program (instruction count is zero)";
-	case RE_GET_OUT_OF_BOUNDS:
+	case RuntimeError::RE_GET_OUT_OF_BOUNDS:
 		return "Input access is out of bounds";
-	case RE_PUT_OUT_OF_BOUNDS:
+	case RuntimeError::RE_PUT_OUT_OF_BOUNDS:
 		return "Output access is out of bounds";
 	default:
 		return "Unknown";
 	}
 }
 
-Program::RuntimeError Program::Run(Value* results, const size_t size)
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Run(Value* results, const size_t size)
 {
-	RuntimeError error = RE_NONE;
+	RuntimeError error;
 	const uint64_t icount = GetInstructionCount();
 	if (icount > 0)
 	{
 		pc = 0;
-		for (; pc < icount && error == RE_NONE; ++pc)
+		for (; pc < icount && error.code == RuntimeError::RE_NONE; ++pc)
 		{
 			error = Exec(ops[pc], results, size);
 		}
@@ -786,23 +804,21 @@ Program::RuntimeError Program::Run(Value* results, const size_t size)
 		// 1 when a program terminates with the result of an expression (eg: t*Fn)
 		// 0 when a program terminates with a POP (eg: t*Fn;)
 		// in the case of the POP, the value of the expression will already be in result.
-		if (error == RE_NONE)
+		if (error.code == RuntimeError::RE_NONE)
 		{
 			if (stack.size() > 1)
 			{
-				error = RE_INCONSISTENT_STACK;
+				error.code = RuntimeError::RE_INCONSISTENT_STACK;
+				error.value = stack.size();
 			}
 		}
 
 		// clear the stack so it doesn't explode in size due to continual runtime errors
-		while (stack.size() > 0)
-		{
-			stack.pop();
-		}
+		stack.clear();
 	}
 	else
 	{
-		error = RE_EMPTY_PROGRAM;
+		error.code = RuntimeError::RE_EMPTY_PROGRAM;
 	}
 
 	return error;
@@ -811,12 +827,13 @@ Program::RuntimeError Program::Run(Value* results, const size_t size)
 #define POP1 if ( stack.size() < 1 ) goto bad_stack; Value a = stack.top(); stack.pop();
 #define POP2 if ( stack.size() < 2 ) goto bad_stack; Value b = stack.top(); stack.pop(); Value a = stack.top(); stack.pop();
 #define POP3 if ( stack.size() < 3 ) goto bad_stack; Value c = stack.top(); stack.pop(); Value b = stack.top(); stack.pop(); Value a = stack.top(); stack.pop();
-#define POP(n) if (stack.size() < n) goto bad_stack; std::vector<Value> args; for(int i = 0; i < n; ++i) { args.push_back(stack.top()); stack.pop(); }
+#define POP(n) if (stack.size() < n) goto bad_stack; Stack<Value, kStackMax> args; for(int i = 0; i < n; ++i) { args.push(stack.top()); stack.pop(); }
 
 // perform the operation
-Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value* results, size_t size)
 {
-	RuntimeError error = RE_NONE;
+	RuntimeError error;
 	switch (op.code)
 	{
 		// no operands - result is pushed to the stack
@@ -830,7 +847,8 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 		// stack should now be empty, if it isn't that's an error
 		if (stack.size() > 0)
 		{
-			error = RE_INCONSISTENT_STACK;
+			error.code = RuntimeError::RE_INCONSISTENT_STACK;
+			error.value = stack.size();
 		}
 	}
 	break;
@@ -861,7 +879,8 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 		}
 		else
 		{
-			error = RE_GET_OUT_OF_BOUNDS;
+			error.code = RuntimeError::RE_GET_OUT_OF_BOUNDS;
+			error.value = a;
 		}
 		stack.push(v);
 	}
@@ -970,7 +989,7 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 		POP2;
 		Value v = 0;
 		if (b) { v = a / b; }
-		else { error = RE_DIVIDE_BY_ZERO; }
+		else { error.code = RuntimeError::RE_DIVIDE_BY_ZERO; }
 		stack.push(v);
 	}
 	break;
@@ -980,7 +999,7 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 		POP2;
 		Value v = 0;
 		if (b) { v = a%b; }
-		else { error = RE_DIVIDE_BY_ZERO; }
+		else { error.code = RuntimeError::RE_DIVIDE_BY_ZERO; }
 		stack.push(v);
 	}
 	break;
@@ -1091,8 +1110,8 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 		// this is why we pop values for Poke from the back of args.
 		for (int i = 0; i < op.val; ++i)
 		{
-			Value b = args.back();
-			args.pop_back();
+			Value b = args.top();
+			args.pop();
 
 			Value address = a + i;
 			Poke(address, b);
@@ -1116,8 +1135,8 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 		// pop off the address for the first result
 		POP1;
 
-		Value b = args.back();
-		args.pop_back();
+		Value b = args.top();
+		args.pop();
 
 		// [*] = should fill the entire output
 		// so we assign results in order until we run out
@@ -1134,8 +1153,8 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 				c += b;
 				if (!args.empty())
 				{
-					b = args.back();
-					args.pop_back();
+					b = args.top();
+					args.pop();
 				}
 			}
 
@@ -1156,14 +1175,15 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 			results[a++] = b;
 			while (a < size && !args.empty())
 			{
-				b = args.back();
-				args.pop_back();
+				b = args.top();
+				args.pop();
 				results[a++] = b;
 			}
 		}
 		else
 		{
-			error = RE_PUT_OUT_OF_BOUNDS;
+			error.code = RuntimeError::RE_PUT_OUT_OF_BOUNDS;
+			error.value = a;
 		}		
 	}
 	break;
@@ -1189,13 +1209,15 @@ Program::RuntimeError Program::Exec(const Op& op, Value* results, size_t size)
 	// perform a no-op, but set the error as a result
 	default:
 	{
-		error = RE_MISSING_OPCODE;
+		error.code = RuntimeError::RE_MISSING_OPCODE;
+		error.value = op.code;
 	}
 	break;
 
 bad_stack:
 	{
-		error = RE_MISSING_OPERAND;
+		error.code = RuntimeError::RE_MISSING_OPERAND;
+		error.value = op.code;
 	}
 	break;
 	}
@@ -1203,48 +1225,63 @@ bad_stack:
 	return error;
 }
 
-Program::Value Program::Get(const Char var) const
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE Value Executable<OpsMax, MemSize>::Get(const Char var) const
 {
 	return Peek(GetAddress(var, userMemSize));
 }
 
-void Program::Set(const Char var, const Value value)
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE void Executable<OpsMax, MemSize>::Set(const Char var, const Value value)
 {
 	Poke(GetAddress(var, userMemSize), value);
 }
 
-Program::Value Program::GetCC(const Value idx) const
+template <size_t OpsMax, size_t MemSize> 
+VESSL_INLINE Value& Executable<OpsMax, MemSize>::operator[](const Char var)
+{
+  return mem[GetAddress(var, userMemSize)%memSize];
+}
+
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE Value Executable<OpsMax, MemSize>::GetCC(const Value idx) const
 {
 	// prevent array reading overrun by wrapping around, since this is how accessing memory works
 	return cc[idx % kCCSize];
 }
 
-void Program::SetCC(const Value idx, const Value value)
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE void Executable<OpsMax, MemSize>::SetCC(const Value idx, const Value value)
 {
 	cc[idx % kCCSize] = value;
 }
 
-Program::Value Program::GetVC(const Value idx) const
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE Value Executable<OpsMax, MemSize>::GetVC(const Value idx) const
 {
 	return vc[idx % kVCSize];
 }
 
-void Program::SetVC(const Value idx, const Value value)
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE void Executable<OpsMax, MemSize>::SetVC(const Value idx, const Value value)
 {
 	vc[idx % kVCSize] = value;
 }
 
-Program::Value Program::Peek(const Value address) const
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE Value Executable<OpsMax, MemSize>::Peek(const Value address) const
 {
 	// peeks wrap around so we never go outside of our memory space
 	return mem[address%memSize];
 }
 
-
-void Program::Poke(const Value address, const Value value)
+template<size_t OpsMax, size_t MemSize>
+VESSL_INLINE void Executable<OpsMax, MemSize>::Poke(const Value address, const Value value)
 {
 	// pokes wrap around so we never go outside of our memory space
 	mem[address%memSize] = value;
 }
 
 #pragma endregion
+
+} // namespace Program

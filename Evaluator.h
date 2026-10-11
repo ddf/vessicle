@@ -51,6 +51,7 @@ public:
     {
       exec_.Load(ops, vessl::math::random::u32());
       params_.tick.value = 0;
+      tick_phase_ = 1.f;
     }
     return success;
   }
@@ -64,39 +65,45 @@ public:
   VESSL_INLINE output_t process(const input_t& in) override
   {
     output_t out(0);
-    {
+    { 
       const Program::Value range = (Program::Value)1 << params_.bit_depth.value;
       const float inv_range = 1.0f / range;
-      const float mdenom = 1000.f / sample_rate_;
-      const float qdenom = 128.f / (sample_rate_ / (params_.tempo.value / 60.f));
-      exec_['t'] = params_.tick.value;
-      exec_['m'] = (Program::Value)vessl::math::round(params_.tick.value * mdenom);
-      exec_['q'] = (Program::Value)vessl::math::round(params_.tick.value * qdenom);
-      exec_['w'] = range;
-      exec_['~'] = (Program::Value)sample_rate_;
-      
-      for(size_t vi = 0; vi < 8; ++vi)
-      {
-        exec_.SetVC(vi, static_cast<Program::Value>(255.f * params_.v[vi].value));
-      }
 
-      for(size_t i = 0; i < N; ++i)
+      tick_phase_ += params_.rate.value;
+      if (tick_phase_ >= 1.f)
       {
-        float norm = vessl::cast<float>(in.samples[i])*0.5f + 0.5f;
-        args_[i] = static_cast<Program::Value>(norm * (range-1));
-      }
+        Program::Value tick_adv = static_cast<Program::Value>(tick_phase_);
+        Program::Value tick_now = params_.tick.value + tick_adv;
+        tick_phase_ -= static_cast<analog_t>(tick_adv);
 
-      run_result_ = exec_.Run(args_, N);
+        for(size_t i = 0; i < N; ++i)
+        {
+          float norm = vessl::cast<float>(in.samples[i])*0.5f + 0.5f;
+          args_[i] = static_cast<Program::Value>(norm * (range-1));
+        }
+        const float sr = sample_rate_;
+        const float mdenom = 1000.f / sr;
+        const float qdenom = 128.f / (sr / (params_.tempo.value / 60.f));
+        exec_['t'] = params_.tick.value;
+        exec_['m'] = (Program::Value)vessl::math::round(params_.tick.value * mdenom);
+        exec_['q'] = (Program::Value)vessl::math::round(params_.tick.value * qdenom);
+        exec_['w'] = range;
+        exec_['~'] = (Program::Value)sr;
+        
+        for(size_t vi = 0; vi < 8; ++vi)
+        {
+          exec_.SetVC(vi, static_cast<Program::Value>(255.f * params_.v[vi].value));
+        }
+
+        run_result_ = exec_.Run(args_, N);
+        params_.tick.value = tick_now;
+      }
 
       for(size_t i = 0; i < N; ++i)
       {
         float norm = (args_[i] & (range-1)) * inv_range; 
         out.samples[i] = vessl::cast<T>(norm*2.f - 1.f);
       }
-      tick_phase_ += params_.rate.value;
-      Program::Value tick_adv = static_cast<Program::Value>(tick_phase_);
-      params_.tick.value += tick_adv;
-      tick_phase_ -= static_cast<analog_t>(tick_adv);
     }
     return out;
   }

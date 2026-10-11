@@ -31,8 +31,7 @@ static bool GetUnaryOp(char c, Program::Op::Code* outCode)
 	}
 }
 
-// static
-VESSL_INLINE Value GetAddress(const Char var, const size_t userMemorySize)
+VESSL_INLINE static Value GetAddress(const Char var, const size_t userMemorySize)
 {
 	// we static cast to unsigned char because we want to convert the variable
 	// to a memory offset that begins at 0.
@@ -54,7 +53,7 @@ Executable<OpsMax, MemSize>::Executable()
 }
 
 template <size_t OpsMax, size_t MemSize>
-inline bool Executable<OpsMax, MemSize>::Load(const std::vector<Op> &inOps, const size_t seed)
+VESSL_INLINE bool Executable<OpsMax, MemSize>::Load(const std::vector<Op> &inOps, const size_t seed)
 {
 	bool valid_ops = inOps.size() > 0 && inOps.size() < OpsMax;
 	if (valid_ops)
@@ -127,47 +126,62 @@ struct CompilationState
 	Program::CompileError error;
 	std::vector<Program::Op> ops;
 
-	CompilationState(const Program::Char* inSource, const size_t userMemorySize)
-		: source(inSource)
-		, userMemSize(userMemorySize)
-		, parsePos(0)
-		, parenCount(0)
-		, bracketCount(0)
-		, parseDepth(0)
-		, error(Program::CE_NONE)
-	{
-
-	}
+	CompilationState(const Program::Char* inSource, const size_t userMemorySize);
 
 	// some helpers
-	Program::Char operator*() const { return source[parsePos]; }
-	size_t Push(Program::Op::Code code, Program::Value value = 0) { ops.push_back(Program::Op(code, value)); return ops.size()-1; }
-	void SkipWhitespace()
+	Program::Char operator*() const;
+	size_t Push(Program::Op::Code code, Program::Value value = 0);
+	void SkipWhitespace();
+};
+
+CompilationState::CompilationState(const Program::Char* inSource, const size_t userMemorySize)
+	: source(inSource)
+	, userMemSize(userMemorySize)
+	, parsePos(0)
+	, parenCount(0)
+	, bracketCount(0)
+	, parseDepth(0)
+	, error(Program::CE_NONE)
+{
+
+}
+
+Program::Char CompilationState::operator*() const 
+{ 
+	return source[parsePos]; 
+}
+
+size_t CompilationState::Push(Program::Op::Code code, Program::Value value) 
+{ 
+	ops.push_back(Program::Op(code, value)); 
+	return ops.size()-1; 
+}
+
+void CompilationState::SkipWhitespace()
+{
+	while (isspace(source[parsePos]))
 	{
-		while (isspace(source[parsePos]))
+		++parsePos;
+	}
+
+	// also skip any commented text while we are at it
+	if (source[parsePos] == '/' && source[parsePos + 1] == '/')
+	{
+		parsePos += 2;
+		// read to the end of line or end of file
+		while (source[parsePos] != '\n' && source[parsePos] != '\0')
 		{
 			++parsePos;
 		}
 
-		// also skip any commented text while we are at it
-		if (source[parsePos] == '/' && source[parsePos + 1] == '/')
+		// if we reached end of line and this is not end of file
+		// then we might have more whitespace to skip on the next line
+		if (source[parsePos] != '\0')
 		{
-			parsePos += 2;
-			// read to the end of line or end of file
-			while (source[parsePos] != '\n' && source[parsePos] != '\0')
-			{
-				++parsePos;
-			}
-
-			// if we reached end of line and this is not end of file
-			// then we might have more whitespace to skip on the next line
-			if (source[parsePos] != '\0')
-			{
-				SkipWhitespace();
-			}
+			SkipWhitespace();
 		}
 	}
-};
+}
 
 // forward declare Parse so that we can recurse back to it from anywhere.
 static int Parse(CompilationState& state);
@@ -177,7 +191,7 @@ static int ParseAtom(CompilationState& state)
 	// Skip spaces
 	state.SkipWhitespace();
 
-	std::stack<Program::Op::Code> unaryOps;
+	Stack<Program::Op::Code, 256> unaryOps;
 
 	// see if the current character is a unary operator
 	// and push the appropriate opcode onto the unaryOps stack.
@@ -755,6 +769,80 @@ size_t Program::Compile(const Char* source, std::vector<Op>& outOps, CompileErro
 
 	return outOps.size();
 }
+
+template <size_t OpsMax, size_t MemSize> 
+Compiler* Compile(const Char *source) 
+{
+	struct CompilerImpl : public Compiler
+	{
+		CompilationState state;
+
+		CompilerImpl(const Char* source) : state(source, MemSize) {}
+
+		bool IsDone() const override { return *state == '\0' || state.error != CE_NONE; }
+		CompileError ErrorCode() const override { return state.error; }
+		int ErrorLocation() const override { return state.parsePos; }
+		const std::vector<Op>& Ops() const override { return state.ops; }
+
+		void Tick()
+		{
+			if (*state != '\0')
+			{
+				if (Parse(state)) return;
+
+				// if we aren't at the end yet, we should have a POP as the last op.
+				if (*state != '\0' && state.ops.back().code != Op::POP)
+				{
+					state.error = CE_UNEXPECTED_CHAR;
+					return;
+				}
+ 
+				// if we are at the end, do final error checking
+				if (*state == '\0' && state.error == CE_NONE)
+				{
+					// Now, expr should point to '\0', and _paren_count should be zero
+					if (state.parenCount != 0 || *state == ')')
+					{
+						state.error = CE_MISSING_PAREN;
+					}
+					else if (*state != '\0')
+					{
+						state.error = CE_UNEXPECTED_CHAR;
+					}
+					else if (state.ops.size() > OpsMax)
+					{
+						state.error = CE_TOO_MANY_OPERATIONS;
+					}
+					// make sure the program includes at least one PUT.
+					// we consider it a compilation error if it doesn't
+					// since the resulting program would output nothing 
+					// and therefore be useless.
+					else
+					{
+						bool hasPut = false;
+						for (auto& op : state.ops)
+						{
+							hasPut = hasPut || op.code == Op::PUT;
+						}
+
+						if (!hasPut)
+						{
+							state.error = CE_MISSING_PUT;
+						}
+					}
+				}
+			}
+		}
+	};
+
+	return new CompilerImpl(source);
+}
+
+void Destroy(Compiler *compiler) 
+{
+	delete compiler;
+}
+
 #pragma endregion
 
 //////////////////////////////////////////////////////////////////////////

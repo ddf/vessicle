@@ -6,7 +6,6 @@
 
 #include <cstdint>
 #include <vector>
-#include <stack>
 #include <random>
 #include "vessl/vessl.h"
 
@@ -130,10 +129,23 @@ namespace Program
 	template<size_t OpsMax, size_t MemSize>
 	static size_t Compile(const Char* source, std::vector<Op>& outOps, CompileError& outError, int& outErrorPosition);
 
-	// get the address in memory of a variable declared in a program with a particular userMemorySize.
-	static Value GetAddress(const Char var, size_t userMemorySize);
+		// interface for doing incremental compilation
+	class Compiler
+	{
+	public:
+		virtual void Tick() = 0;
+		virtual bool IsDone() const = 0;
+		virtual CompileError ErrorCode() const = 0;
+		virtual int ErrorLocation() const = 0;
+		virtual const std::vector<Op>& Ops() const = 0;
 
-	// get human-readable descriptions of errors
+		// blocking run until done
+		void Run() { while(!IsDone()) { Tick(); } }
+	};
+	
+	template<size_t OpsMax, size_t MemSize>
+	static Compiler* Compile(const Char* source);
+	static void Destroy(Compiler* compiler);
 
 	template<size_t OpsMax, size_t MemSize>
 	class Executable
@@ -174,7 +186,7 @@ namespace Program
 
 		static constexpr size_t kCCSize = 128;
 		static constexpr size_t kVCSize = 8;
-		static constexpr size_t kStackMax = 32;
+		static constexpr size_t kStackMax = 256;
 
 		static constexpr size_t userMemSize = MemSize; // how much of mem is "user" memory
 		static constexpr size_t memSize = MemSize + 256; // the actual size of mem

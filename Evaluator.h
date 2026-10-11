@@ -55,13 +55,33 @@ public:
       tick_phase_ = 1.f;
     }
     return success;
-  }
+  } 
 
   [[nodiscard]] Program::CompileError last_compile_error() const { return compile_result_; }
   [[nodiscard]] int last_compile_error_position() const { return compile_error_position_; }
   [[nodiscard]] Program::RuntimeError last_runtime_error() const { return run_result_; }
   [[nodiscard]] Program::Value get(Program::Char var) const { return exec_.Get(var); }
   [[nodiscard]] size_t instruction_count() const { return exec_.GetInstructionCount(); }
+
+  static Program::Compiler* make_compiler(const char* program_text)
+  {
+    Program::Compiler* c = Program::Compile<512, 4096>(program_text);
+    return c;
+  }
+
+  bool load(Program::Compiler* result)
+  {
+    compile_result_ = result->ErrorCode();
+    compile_error_position_ = result->ErrorLocation();
+    bool success = compile_result_ == Program::CE_NONE;
+    if (success)
+    {
+      exec_.Load(result->Ops(), vessl::math::random::u32());
+      params_.tick.value = 0;
+      tick_phase_ = 1.f;
+    }
+    return success;
+  }
 
   VESSL_INLINE output_t process(const input_t& in) override
   {

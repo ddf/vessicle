@@ -839,7 +839,12 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Run(Value* results, const
 #define POP1 CHKS(1) Value a = stack.pop();
 #define POP2 CHKS(2) Value b = stack.pop(); Value a = stack.pop();
 #define POP3 CHKS(3) Value c = stack.pop(); Value b = stack.pop(); Value a = stack.pop();
-#define POP(n) CHKS(n) Stack<Value, kStackMax> args; for(int i = 0; i < n; ++i) { args.push(stack.pop()); }
+#define POP(n) CHKS(n) static Stack<Value, kStackMax> args; \
+ args.clear(); \
+for(int i = 0; i < (n); ++i) \
+{ \
+	args.push(stack.pop()); \
+}
 
 // perform the operation
 template<size_t OpsMax, size_t MemSize>
@@ -908,12 +913,11 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 	case Op::SIN:
 	{
 		POP1;
-		Value r = Get('w');
-		float v = a%r;
-		vessl::phase_t p = vessl::cast<vessl::phase_t>(v/r);
-		vessl::q31_t q = vessl::math::sin<vessl::q31_t>(p);
-		float s = vessl::cast<float>(q)*0.5f + 0.5f;
-		stack.push(static_cast<Value>(s*r));
+		Value r  = Get('w');
+		Value hr = r / 2;
+		r += 1;
+		float s = vessl::math::sin<float>(vessl::math::two_pi<float>() * ((float)(a%r) / r));
+		stack.push(Value(s*hr + hr));
 	}
 	break;
 

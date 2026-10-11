@@ -830,10 +830,16 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Run(Value* results, const
 	return error;
 }
 
-#define POP1 if ( stack.size() < 1 ) goto bad_stack; Value a = stack.top(); stack.pop();
-#define POP2 if ( stack.size() < 2 ) goto bad_stack; Value b = stack.top(); stack.pop(); Value a = stack.top(); stack.pop();
-#define POP3 if ( stack.size() < 3 ) goto bad_stack; Value c = stack.top(); stack.pop(); Value b = stack.top(); stack.pop(); Value a = stack.top(); stack.pop();
-#define POP(n) if (stack.size() < n) goto bad_stack; Stack<Value, kStackMax> args; for(int i = 0; i < n; ++i) { args.push(stack.top()); stack.pop(); }
+#ifdef DEBUG
+#define CHKS(n) if ( stack.size() < (n)) goto bad_stack;
+#else
+#define CHKS(n)
+#endif
+
+#define POP1 CHKS(1) Value a = stack.pop();
+#define POP2 CHKS(2) Value b = stack.pop(); Value a = stack.pop();
+#define POP3 CHKS(3) Value c = stack.pop(); Value b = stack.pop(); Value a = stack.pop();
+#define POP(n) CHKS(n) Stack<Value, kStackMax> args; for(int i = 0; i < n; ++i) { args.push(stack.pop()); }
 
 // perform the operation
 template<size_t OpsMax, size_t MemSize>
@@ -1115,8 +1121,7 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 		// this is why we pop values for Poke from the back of args.
 		for (int i = 0; i < op.val; ++i)
 		{
-			Value b = args.top();
-			args.pop();
+			Value b = args.pop();
 
 			Value address = a + i;
 			Poke(address, b);
@@ -1140,8 +1145,7 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 		// pop off the address for the first result
 		POP1;
 
-		Value b = args.top();
-		args.pop();
+		Value b = args.pop();
 
 		// [*] = should fill the entire output
 		// so we assign results in order until we run out
@@ -1158,8 +1162,7 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 				c += b;
 				if (!args.empty())
 				{
-					b = args.top();
-					args.pop();
+					b = args.pop();
 				}
 			}
 
@@ -1180,8 +1183,7 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 			results[a++] = b;
 			while (a < size && !args.empty())
 			{
-				b = args.top();
-				args.pop();
+				b = args.pop();
 				results[a++] = b;
 			}
 		}

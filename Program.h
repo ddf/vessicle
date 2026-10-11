@@ -117,7 +117,7 @@ namespace Program
 		VESSL_INLINE bool empty() const { return t_==0; }
 		VESSL_INLINE size_t size() const { return t_; }
 		VESSL_INLINE void push(const T& v) { s_[t_++] = v; }
-		VESSL_INLINE void pop() { VASSERT(!empty(), "pop on an empty stack"); --t_; }
+		VESSL_INLINE T pop() { VASSERT(!empty(), "pop on an empty stack"); return s_[--t_]; }
 		VESSL_INLINE const T& top() const { VASSERT(!empty(), "top on an empty stack"); return s_[t_-1]; }
 		VESSL_INLINE void clear() { t_ = 0; }
 

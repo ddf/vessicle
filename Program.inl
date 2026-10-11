@@ -123,6 +123,7 @@ struct CompilationState
 	int parenCount;
 	int bracketCount;
 	int parseDepth;
+	bool hasInit; // true if the source starts with an "init:" label.
 	Program::CompileError error;
 	std::vector<Program::Op> ops;
 
@@ -674,6 +675,70 @@ static int ParsePOK(CompilationState& state)
 // we start here so that we don't have to change the forward declare for ParseAtom when we add another level
 static int Parse(CompilationState& state)
 {
+	if (state.parseDepth == 0)
+	{
+		// look for init section, must be the very first thing in the file.
+		if (state.parsePos == 0)
+		{
+			static char initLabel[] = "init:";
+			while(state.parsePos < 5)
+			{
+				if (*state == initLabel[state.parsePos])
+				{
+					state.parsePos++;
+				}
+				else
+				{
+					state.parsePos = 0;
+					break;
+				}
+			}
+			// inject init logic
+			if (state.parsePos == 5)
+			{
+				state.Push(Op::PSH, GetAddress('!', state.userMemSize));
+				state.Push(Op::PEK);
+				state.Push(Op::PSH, 0);
+				state.Push(Op::CEQ);
+				// we will patch this Op with the address of the first Op of the exec:
+				state.Push(Op::CND, 0);
+				state.hasInit = true;
+			}
+		}
+		else if (state.hasInit) // see if we are starting an exec: section
+		{
+			state.SkipWhitespace();
+			static char execLabel[] = "exec:";
+			size_t p = state.parsePos;
+			size_t e = 0;
+			while(e < 5)
+			{
+				if (*state == execLabel[e])
+				{
+					state.parsePos++;
+					e++;
+				}
+				else
+				{
+					state.parsePos = p;
+					break;
+				}
+			}
+			// found exec label, inject setting '!' to 1 and patch init CND jump address.
+			if (e == 5)
+			{
+				state.Push(Op::PSH, GetAddress('!', state.userMemSize));
+				state.Push(Op::PSH, 1);
+				state.Push(Op::POK, 1);
+				state.Push(Op::POP);
+				// the next operation added will be the beginning of exec: instructions
+				state.ops[4].val = state.ops.size();
+				// push a NOP so we guarantee we have a valid address
+				state.Push(Op::NOP);
+			}
+		}
+	}
+
 	state.parseDepth++;
 	{
 		if (ParsePOK(state)) return 1;
@@ -941,7 +1006,10 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 	RuntimeError error;
 	switch (op.code)
 	{
-		// no operands - result is pushed to the stack
+	case Op::NOP:
+		break;
+	
+	// no operands - result is pushed to the stack
 	case Op::PSH:
 		stack.push(op.val);
 		break;
@@ -1047,7 +1115,8 @@ VESSL_INLINE RuntimeError Executable<OpsMax, MemSize>::Exec(const Op& op, Value*
 	case Op::RND:
 	{
 		POP1;
-		stack.push(rng() % a);
+		// don't crash if the range RND is zero!!!! finally!!!!
+		stack.push(a > 0 ? rng() % a : 0);
 	}
 	break;
 

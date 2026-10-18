@@ -29,7 +29,7 @@ DESCRIPTION:
 template<typename T, size_t BufferSize>
 class Cutup : public vessl::unit_processor<T>
             , public vessl::time::clockable
-            , public vessl::plist<1>
+            , public vessl::plist<5>
 {
   using binary_t = vessl::binary_t;
   using analog_t = vessl::analog_t;
@@ -37,6 +37,7 @@ class Cutup : public vessl::unit_processor<T>
   using size_t   = vessl::size_t;
   using sample_t = T;
   using Freeze   = vessl::processors::freeze<T>;
+  using Ramp     = vessl::generators::ramp<analog_t>;
   using Parameter = vessl::parameter;
 
 public:
@@ -45,11 +46,22 @@ public:
   , slice_dur_(0)
   , freeze_(vessl::array(freeze_buffer_, BufferSize), sample_rate)
   , freeze_enabled_(freeze_.enabled())
+  , rate_ramp_(sample_rate)
+  , slice_ramp_(sample_rate)
   {
     memset(freeze_buffer_, 0, sizeof(T)*BufferSize);
+    params_.rate_min.value = 1;
+    params_.rate_max.value = 1;
+    params_.slice_min.value = 0;
+    params_.slice_max.value = 6;
   }
 
   Parameter enabled() const { return params_.enabled("enabled", 'e'); }
+  Parameter slice_min() const { return params_.slice_min("slice min", 's'); }
+  Parameter slice_max() const { return params_.slice_max("slice max", 'S'); }
+  // range for randomly chosen rate per slice (inclusive)
+  Parameter rate_min() const { return params_.rate_min("rate min", 'r'); }
+  Parameter rate_max() const { return params_.rate_max("rate max", 'R'); }
 
   const vessl::parameter_list& parameters() const override { return *this; }
 
@@ -69,6 +81,10 @@ public:
     }
     else if (frozen)
     {
+      analog_t dur = slice_ramp_.generate();
+      freeze_.position() = slice_start_ - dur;
+      freeze_.duration() = duration_t(dur);
+      freeze_.rate() = rate_ramp_.generate<vessl::math::easing::expo::out>();
       if (--slice_dur_.samples <= 0)
       {
         start_slice();
@@ -84,14 +100,30 @@ protected:
     slice_dur_      = duration_t(clockable::tempo_.samples * slice_ticks);
     // we one of the previous four beats to slice
     int slice_idx = vessl::math::random::range(1, 5);
-    int slice_clk = vessl::math::random::range(1, 5);
-    int slice_rte = vessl::math::random::range(1, 9);
+    int slice_clf = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
+    int slice_clt = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
+    int rate_min  = vessl::math::max(params_.rate_min.value, 1);
+    int slice_rtf = vessl::math::random::range(rate_min, params_.rate_max.value+1);
+    int slice_rtt = vessl::math::random::range(params_.rate_min.value, params_.rate_max.value+1);
     int slice_dir = vessl::math::random::range(0, 2) ? 1 : -1;
-    analog_t slice_start = slice_idx * slice_dur_.samples;
-    analog_t slice_end   = slice_start - clockable::tempo_.samples * slice_clk;
-    freeze_.position()   = slice_end;
-    freeze_.duration()   = duration_t(slice_start - slice_end);
-    freeze_.rate()       = static_cast<float>(slice_rte) * slice_dir;
+
+    slice_start_ = slice_idx * slice_dur_.samples;
+    analog_t slice_dur_f = clockable::tempo_.samples * 0.125f * slice_clf;
+    analog_t slice_dur_t = clockable::tempo_.samples * 0.125f * slice_clt;
+    
+    freeze_.position()   = slice_start_ - slice_dur_f;
+    freeze_.duration()   = duration_t(slice_dur_f);
+    freeze_.rate()       = static_cast<float>(slice_rtf) * slice_dir;
+    
+    rate_ramp_.from()     = static_cast<float>(slice_rtf) * slice_dir;
+    rate_ramp_.to()       = static_cast<float>(slice_rtt) * slice_dir;
+    rate_ramp_.duration() = slice_dur_.to_seconds(clockable::sample_rate_);
+    rate_ramp_.trigger();
+
+    slice_ramp_.from()     = slice_dur_f;
+    slice_ramp_.to()       = slice_dur_t;
+    slice_ramp_.duration() = slice_dur_.to_seconds(clockable::sample_rate_);
+    slice_ramp_.trigger();
   }
 
   [[nodiscard]] Parameter element_at(size_t index) const override
@@ -99,6 +131,10 @@ protected:
     switch(index)
     {
       case 0: return enabled();
+      case 1: return rate_min();
+      case 2: return rate_max();
+      case 3: return slice_min();
+      case 4: return slice_max();
     }
 
     return Parameter::none();
@@ -110,10 +146,17 @@ private:
   struct
   {
     vessl::binary_p enabled;
+    vessl::param<int> rate_min;
+    vessl::param<int> rate_max;
+    vessl::param<int> slice_min;
+    vessl::param<int> slice_max;
   } params_;
 
   duration_t slice_dur_;
+  analog_t   slice_start_;
 
   Freeze freeze_;
   Parameter freeze_enabled_; // cache freeze's enabled parameter because we need to access it so much.
+  Ramp rate_ramp_;
+  Ramp slice_ramp_;
 };

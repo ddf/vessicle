@@ -37,23 +37,27 @@ class Cutup : public vessl::unit_processor<T>
   using size_t   = vessl::size_t;
   using sample_t = T;
   using Freeze   = vessl::processors::freeze<T>;
+  using BitCrush = vessl::processors::bitcrush<T, 24>;
   using Ramp     = vessl::generators::ramp<analog_t>;
   using Parameter = vessl::parameter;
 
 public:
   Cutup(analog_t sample_rate)
   : clockable(sample_rate, 16, sample_rate / 4, 120.f)
-  , slice_dur_(0)
   , freeze_(vessl::array(freeze_buffer_, BufferSize), sample_rate)
+  , crush_(sample_rate, sample_rate)
+  , slice_dur_(0)
   , freeze_enabled_(freeze_.enabled())
   , rate_ramp_(sample_rate)
   , slice_ramp_(sample_rate)
+  , crush_ramp_(sample_rate)
   {
     memset(freeze_buffer_, 0, sizeof(T)*BufferSize);
     params_.rate_min.value = 1;
     params_.rate_max.value = 1;
     params_.slice_min.value = 0;
     params_.slice_max.value = 6;
+    set_crush(0);
   }
 
   Parameter enabled() const { return params_.enabled("enabled", 'e'); }
@@ -62,6 +66,9 @@ public:
   // range for randomly chosen rate per slice (inclusive)
   Parameter rate_min() const { return params_.rate_min("rate min", 'r'); }
   Parameter rate_max() const { return params_.rate_max("rate max", 'R'); }
+  // range for randomly chosen bit crush per slice [0,1] where 0 is no bit crushing.
+  Parameter crush_min() const { return params_.crush_min("crush min", 'c'); }
+  Parameter crush_max() const { return params_.crush_max("crush max", 'C'); }
 
   const vessl::parameter_list& parameters() const override { return *this; }
 
@@ -78,6 +85,7 @@ public:
     else if (!enable && frozen)
     {
       freeze_enabled_ = false;
+      set_crush(0);
     }
     else if (frozen)
     {
@@ -85,20 +93,30 @@ public:
       freeze_.position() = slice_start_ - dur;
       freeze_.duration() = duration_t(dur);
       freeze_.rate() = rate_ramp_.generate<vessl::math::easing::expo::out>();
+      set_crush(crush_ramp_.generate());
       if (--slice_dur_.samples <= 0)
       {
         start_slice();
       }
     }
-    return freeze_.process(in);
+    return (in >> freeze_ >> crush_);
   }
 
 protected:
+  void set_crush(analog_t amt)
+  {
+    float sr   = clockable::sample_rate_;
+    float bits = amt > 0.001f ? (16.f - amt*12.0f) : 24;
+    float rate = amt > 0.001f ? sr * 0.25f + amt*(100 - sr * 0.25f) : sr;
+    crush_.depth() = bits;
+    crush_.rate() = rate;
+  }
+
   void start_slice()
   {
     int slice_ticks = 2 * vessl::math::random::range(1, 3);
     slice_dur_      = duration_t(clockable::tempo_.samples * slice_ticks);
-    // we one of the previous four beats to slice
+    // we choose one of the previous four slice_dur_ sections to slice
     int slice_idx = vessl::math::random::range(1, 5);
     int slice_clf = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
     int slice_clt = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
@@ -106,6 +124,8 @@ protected:
     int slice_rtf = vessl::math::random::range(rate_min, params_.rate_max.value+1);
     int slice_rtt = vessl::math::random::range(params_.rate_min.value, params_.rate_max.value+1);
     int slice_dir = vessl::math::random::range(0, 2) ? 1 : -1;
+    analog_t crush_f = vessl::math::random::range(params_.crush_min.value, params_.crush_max.value);
+    analog_t crush_t = vessl::math::random::range(params_.crush_min.value, params_.crush_max.value); 
 
     slice_start_ = slice_idx * slice_dur_.samples;
     analog_t slice_dur_f = clockable::tempo_.samples * 0.125f * slice_clf;
@@ -124,6 +144,13 @@ protected:
     slice_ramp_.to()       = slice_dur_t;
     slice_ramp_.duration() = slice_dur_.to_seconds(clockable::sample_rate_);
     slice_ramp_.trigger();
+
+    crush_ramp_.from()     = crush_f;
+    crush_ramp_.to()       = crush_t;
+    crush_ramp_.duration() = slice_dur_.to_seconds(clockable::sample_rate_);
+    crush_ramp_.trigger();
+
+    set_crush(crush_f);
   }
 
   [[nodiscard]] Parameter element_at(size_t index) const override
@@ -135,6 +162,8 @@ protected:
       case 2: return rate_max();
       case 3: return slice_min();
       case 4: return slice_max();
+      case 5: return crush_min();
+      case 6: return crush_max();
     }
 
     return Parameter::none();
@@ -143,6 +172,11 @@ protected:
 private:
   sample_t freeze_buffer_[BufferSize];
 
+  // processors
+  Freeze freeze_;
+  BitCrush crush_;
+
+  // paramers and state
   struct
   {
     vessl::binary_p enabled;
@@ -150,13 +184,15 @@ private:
     vessl::param<int> rate_max;
     vessl::param<int> slice_min;
     vessl::param<int> slice_max;
+    vessl::analog_p crush_min;
+    vessl::analog_p crush_max;
   } params_;
 
   duration_t slice_dur_;
   analog_t   slice_start_;
 
-  Freeze freeze_;
   Parameter freeze_enabled_; // cache freeze's enabled parameter because we need to access it so much.
   Ramp rate_ramp_;
   Ramp slice_ramp_;
+  Ramp crush_ramp_;
 };

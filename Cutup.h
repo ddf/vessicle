@@ -48,6 +48,8 @@ public:
   , crush_(sample_rate, sample_rate)
   , slice_dur_(0)
   , freeze_enabled_(freeze_.enabled())
+  , slice_amp_(1.f)
+  , slice_damp_(1.f)
   , rate_ramp_(sample_rate)
   , slice_ramp_(sample_rate)
   , crush_ramp_(sample_rate)
@@ -69,6 +71,8 @@ public:
   // range for randomly chosen bit crush per slice [0,1] where 0 is no bit crushing.
   Parameter crush_min() const { return params_.crush_min("crush min", 'c'); }
   Parameter crush_max() const { return params_.crush_max("crush max", 'C'); }
+  // range for how quickly single slice is damped over time [0,1]
+  Parameter damp_max() const { return params_.damp_max("damp max", 'D'); }
 
   const vessl::parameter_list& parameters() const override { return *this; }
 
@@ -85,6 +89,7 @@ public:
     else if (!enable && frozen)
     {
       freeze_enabled_ = false;
+      slice_amp_ = 1.f;
       set_crush(0);
     }
     else if (frozen)
@@ -94,12 +99,18 @@ public:
       freeze_.duration() = duration_t(dur);
       freeze_.rate() = rate_ramp_.generate<vessl::math::easing::expo::out>();
       set_crush(crush_ramp_.generate());
+      if (freeze_.looped())
+      {
+        slice_amp_ *= slice_damp_;
+      }
       if (--slice_dur_.samples <= 0)
       {
         start_slice();
       }
     }
-    return (in >> freeze_ >> crush_);
+    sample_t out;
+    in >> freeze_ >> crush_ >> out;
+    return out * slice_amp_;
   }
 
 protected:
@@ -114,7 +125,7 @@ protected:
 
   void start_slice()
   {
-    int slice_ticks = 2 * vessl::math::random::range(1, 3);
+    int slice_ticks = 2 * vessl::math::random::range(1, 5);
     slice_dur_      = duration_t(clockable::tempo_.samples * slice_ticks);
     // we choose one of the previous four slice_dur_ sections to slice
     int slice_idx = vessl::math::random::range(1, 5);
@@ -128,12 +139,16 @@ protected:
     analog_t crush_t = vessl::math::random::range(params_.crush_min.value, params_.crush_max.value); 
 
     slice_start_ = slice_idx * slice_dur_.samples;
+    slice_amp_   = 1.f;
+    slice_damp_  = 1.0f - vessl::math::random::range(0.f, params_.damp_max.value);
+
     analog_t slice_dur_f = clockable::tempo_.samples * 0.125f * slice_clf;
     analog_t slice_dur_t = clockable::tempo_.samples * 0.125f * slice_clt;
     
     freeze_.position()   = slice_start_ - slice_dur_f;
     freeze_.duration()   = duration_t(slice_dur_f);
     freeze_.rate()       = static_cast<float>(slice_rtf) * slice_dir;
+    freeze_.reset();
     
     rate_ramp_.from()     = static_cast<float>(slice_rtf) * slice_dir;
     rate_ramp_.to()       = static_cast<float>(slice_rtt) * slice_dir;
@@ -164,6 +179,7 @@ protected:
       case 4: return slice_max();
       case 5: return crush_min();
       case 6: return crush_max();
+      case 7: return damp_max();
     }
 
     return Parameter::none();
@@ -186,10 +202,13 @@ private:
     vessl::param<int> slice_max;
     vessl::analog_p crush_min;
     vessl::analog_p crush_max;
+    vessl::analog_p damp_max;
   } params_;
 
   duration_t slice_dur_;
   analog_t   slice_start_;
+  analog_t   slice_amp_;
+  analog_t   slice_damp_;
 
   Parameter freeze_enabled_; // cache freeze's enabled parameter because we need to access it so much.
   Ramp rate_ramp_;

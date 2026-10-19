@@ -26,7 +26,7 @@ DESCRIPTION:
 
 #include "vessl/vessl.h"
 
-template<typename T, size_t BufferSize>
+template<typename T>
 class Cutup : public vessl::unit_processor<T>
             , public vessl::time::clockable
             , public vessl::plist<5>
@@ -42,9 +42,9 @@ class Cutup : public vessl::unit_processor<T>
   using Parameter = vessl::parameter;
 
 public:
-  Cutup(analog_t sample_rate)
+  Cutup(analog_t sample_rate, T* freeze_buffer, size_t freeze_buffer_size)
   : clockable(sample_rate, 16, sample_rate / 4, 120.f)
-  , freeze_(vessl::array(freeze_buffer_, BufferSize), sample_rate)
+  , freeze_(vessl::array(freeze_buffer, freeze_buffer_size), sample_rate)
   , crush_(sample_rate, sample_rate)
   , slice_dur_(0)
   , freeze_enabled_(freeze_.enabled())
@@ -54,7 +54,7 @@ public:
   , slice_ramp_(sample_rate)
   , crush_ramp_(sample_rate)
   {
-    memset(freeze_buffer_, 0, sizeof(T)*BufferSize);
+    memset(freeze_buffer, 0, sizeof(T)*freeze_buffer_size);
     params_.rate_min.value = 1;
     params_.rate_max.value = 1;
     params_.slice_min.value = 0;
@@ -186,8 +186,6 @@ protected:
   }
 
 private:
-  sample_t freeze_buffer_[BufferSize];
-
   // processors
   Freeze freeze_;
   BitCrush crush_;

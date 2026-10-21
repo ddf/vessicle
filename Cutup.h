@@ -125,10 +125,11 @@ protected:
 
   void start_slice()
   {
-    int slice_ticks = 2 * vessl::math::random::range(1, 5);
+    // 2 ticks is half a beat in our reckoning
+    int slice_ticks = 2;
     slice_dur_      = duration_t(clockable::tempo_.samples * slice_ticks);
-    // we choose one of the previous four slice_dur_ sections to slice
-    int slice_idx = vessl::math::random::range(1, 5);
+    // we choose one of the previous eight slice_dur_ sections to slice (i.e. a section from the last 4/4 measure)
+    int slice_idx = vessl::math::random::range(1, 9);
     int slice_clf = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
     int slice_clt = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
     int rate_min  = vessl::math::max(params_.rate_min.value, 1);
@@ -142,8 +143,8 @@ protected:
     slice_amp_   = 1.f;
     slice_damp_  = 1.0f - vessl::math::random::range(0.f, params_.damp_max.value);
 
-    analog_t slice_dur_f = clockable::tempo_.samples * 0.125f * slice_clf;
-    analog_t slice_dur_t = clockable::tempo_.samples * 0.125f * slice_clt;
+    analog_t slice_dur_f = clockable::tempo_.samples * 0.25f * slice_clf;
+    analog_t slice_dur_t = clockable::tempo_.samples * 0.25f * slice_clt;
     
     freeze_.position()   = slice_start_ - slice_dur_f;
     freeze_.duration()   = duration_t(slice_dur_f);

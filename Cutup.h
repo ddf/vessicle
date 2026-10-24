@@ -29,7 +29,7 @@ DESCRIPTION:
 template<typename T>
 class Cutup : public vessl::unit_processor<T>
             , public vessl::time::clockable
-            , public vessl::plist<5>
+            , public vessl::plist<9>
 {
   using binary_t = vessl::binary_t;
   using analog_t = vessl::analog_t;
@@ -52,6 +52,8 @@ public:
   , slices_head_(slice_count - 1)
   , slices_tick_(slice_tick_len)
   , slice_enabled_(false)
+  , slice_requested_(false)
+  , slice_started_(false)
   , slice_dur_(0)
   , slice_amp_(1.f)
   , slice_damp_(1.f)
@@ -70,6 +72,8 @@ public:
   Parameter enabled() const { return params_.enabled("enabled", 'e'); }
   Parameter slice_min() const { return params_.slice_min("slice min", 's'); }
   Parameter slice_max() const { return params_.slice_max("slice max", 'S'); }
+  // bad name for this, controls how much randomization is in choice of slice length
+  Parameter slice_vary() const { return params_.slice_vary("slice vary", 'v'); }
   // range for randomly chosen rate per slice (inclusive)
   Parameter rate_min() const { return params_.rate_min("rate min", 'r'); }
   Parameter rate_max() const { return params_.rate_max("rate max", 'R'); }
@@ -78,6 +82,12 @@ public:
   Parameter crush_max() const { return params_.crush_max("crush max", 'C'); }
   // range for how quickly single slice is damped over time [0,1]
   Parameter damp_max() const { return params_.damp_max("damp max", 'D'); }
+
+  // when enabled, call to start a new slice at the next clock tick
+  VESSL_INLINE void cut() { slice_requested_ = true; }
+
+  // true if a slice was started by the most recent call to process
+  VESSL_INLINE bool sliced() const { return slice_started_; }
 
   const vessl::parameter_list& parameters() const override { return *this; }
 
@@ -88,11 +98,13 @@ public:
     if (enable && !slice_enabled_)
     {
       slice_enabled_ = true;
+      slice_started_ = true;
       start_slice();
     }
     else if (!enable && slice_enabled_)
     {
       slice_enabled_ = false;
+      slice_started_ = false;
       slice_amp_ = 1.f;
       set_crush(0);
     }
@@ -102,7 +114,8 @@ public:
       slice_end_ = slice_start_ + dur;
       slice_rate_ = rate_ramp_.generate<vessl::math::easing::expo::out>();
       set_crush(crush_ramp_.generate());
-      if (--slice_dur_.samples <= 0)
+      slice_started_ = --slice_dur_.samples <= 0;
+      if (slice_started_)
       {
         start_slice();
       }
@@ -132,6 +145,11 @@ protected:
         slices_[slices_head_].len += len;
         slices_tick_++;
       }
+    }
+    else if (slice_requested_)
+    {
+      slice_dur_.samples = sample_delay;
+      slice_requested_ = false;
     }
   }
 
@@ -181,9 +199,11 @@ protected:
   VESSL_INLINE void start_slice()
   {
     // 2 ticks is half a beat in our reckoning
-    static constexpr int st[] = { 4, 6, 8, 12 };
+    static constexpr int st[] = { 16, 12, 8, 6, 3, 1, 4, 2, 4, 1, 3, 6, 8, 12, 16 };
     static constexpr int stc = sizeof(st) / sizeof(int);
-    int slice_ticks = st[vessl::math::random::range(0, stc)];
+    static constexpr int sth = stc / 2;
+    int offset = static_cast<int>(vessl::math::random::range(-sth, sth) * params_.slice_vary.value);
+    int slice_ticks = st[sth + offset];
     // for how long in samples this slice should be played back
     slice_dur_      = duration_t(clockable::tempo_.samples * slice_ticks);
     // we choose one of the previous eight slice_dur_ sections to slice (i.e. a section from the last 4/4 measure)
@@ -236,9 +256,10 @@ protected:
       case 2: return rate_max();
       case 3: return slice_min();
       case 4: return slice_max();
-      case 5: return crush_min();
-      case 6: return crush_max();
-      case 7: return damp_max();
+      case 5: return slice_vary();
+      case 6: return crush_min();
+      case 7: return crush_max();
+      case 8: return damp_max();
     }
 
     return Parameter::none();
@@ -257,6 +278,7 @@ private:
     vessl::param<int> rate_max;
     vessl::param<int> slice_min;
     vessl::param<int> slice_max;
+    vessl::analog_p slice_vary;
     vessl::analog_p crush_min;
     vessl::analog_p crush_max;
     vessl::analog_p damp_max;
@@ -275,6 +297,8 @@ private:
   int slices_head_, slices_tick_;
 
   binary_t   slice_enabled_;
+  binary_t   slice_requested_;
+  binary_t   slice_started_;
   analog_t   slice_start_;
   analog_t   slice_end_;
   analog_t   slice_pos_;

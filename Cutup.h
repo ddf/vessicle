@@ -229,8 +229,8 @@ protected:
     slice_rate_          = static_cast<float>(slice_rtf) * slice_dir;
     slice_pos_           = slice_dir > 0 ? slice_start_ : slice_end_;
     
-    rate_ramp_.from()     = static_cast<float>(slice_rtf) * slice_dir;
-    rate_ramp_.to()       = static_cast<float>(slice_rtt) * slice_dir;
+    rate_ramp_.from()     = static_cast<float>(slice_rtf) * 0.125f * slice_dir;
+    rate_ramp_.to()       = static_cast<float>(slice_rtt) * 0.125f * slice_dir;
     rate_ramp_.duration() = slice_dur_.to_seconds(clockable::sample_rate_);
     rate_ramp_.trigger();
 

@@ -36,25 +36,30 @@ class Cutup : public vessl::unit_processor<T>
   using duration_t = vessl::time::duration;
   using size_t   = vessl::size_t;
   using sample_t = T;
-  using Freeze   = vessl::processors::freeze<T>;
+  using Buffer   = vessl::sample::ring_buffer<T>;
   using BitCrush = vessl::processors::bitcrush<T, 24>;
   using Ramp     = vessl::generators::ramp<analog_t>;
   using Parameter = vessl::parameter;
 
+  static constexpr int slice_count    = 16;
+  static constexpr int slice_tick_len = 2;
+
 public:
-  Cutup(analog_t sample_rate, T* freeze_buffer, size_t freeze_buffer_size)
+  Cutup(analog_t sample_rate, T* buffer, size_t buffer_size)
   : clockable(sample_rate, 16, sample_rate / 4, 120.f)
-  , freeze_(vessl::array(freeze_buffer, freeze_buffer_size), sample_rate)
+  , buffer_(buffer, buffer_size)
   , crush_(sample_rate, sample_rate)
+  , slices_head_(slice_count - 1)
+  , slices_tick_(slice_tick_len)
+  , slice_enabled_(false)
   , slice_dur_(0)
-  , freeze_enabled_(freeze_.enabled())
   , slice_amp_(1.f)
   , slice_damp_(1.f)
   , rate_ramp_(sample_rate)
   , slice_ramp_(sample_rate)
   , crush_ramp_(sample_rate)
   {
-    memset(freeze_buffer, 0, sizeof(T)*freeze_buffer_size);
+    memset(buffer, 0, sizeof(T)*buffer_size);
     params_.rate_min.value = 1;
     params_.rate_max.value = 1;
     params_.slice_min.value = 0;
@@ -80,41 +85,91 @@ public:
   {
     clockable::tick();
     binary_t enable = params_.enabled.value;
-    binary_t frozen = freeze_enabled_.read<binary_t>();
-    if (enable && !frozen)
+    if (enable && !slice_enabled_)
     {
-      freeze_enabled_ = true;
+      slice_enabled_ = true;
       start_slice();
     }
-    else if (!enable && frozen)
+    else if (!enable && slice_enabled_)
     {
-      freeze_enabled_ = false;
+      slice_enabled_ = false;
       slice_amp_ = 1.f;
       set_crush(0);
     }
-    else if (frozen)
+    else if (slice_enabled_)
     {
       analog_t dur = slice_ramp_.generate();
-      freeze_.position() = slice_start_ - dur;
-      freeze_.duration() = duration_t(dur);
-      freeze_.rate() = rate_ramp_.generate<vessl::math::easing::expo::out>();
+      slice_end_ = slice_start_ + dur;
+      slice_rate_ = rate_ramp_.generate<vessl::math::easing::expo::out>();
       set_crush(crush_ramp_.generate());
-      if (freeze_.looped())
-      {
-        slice_amp_ *= slice_damp_;
-      }
       if (--slice_dur_.samples <= 0)
       {
         start_slice();
       }
     }
     sample_t out;
-    in >> freeze_ >> crush_ >> out;
+    process_slice(in) >> crush_ >> out;
     return out * slice_amp_;
   }
 
 protected:
-  void set_crush(analog_t amt)
+  VESSL_INLINE void tock(period_t sample_delay) override
+  {
+    if (!slice_enabled_)
+    {
+      int len = vessl::math::max(static_cast<int>(tempo_.samples), 4);
+      if (slices_tick_ == slice_tick_len)
+      {
+        slices_head_ = (slices_head_+1)%slice_count;
+        slice& slice = slices_[slices_head_];
+
+        slice.idx = (buffer_.get_write_index() + sample_delay + buffer_.size() - len) % buffer_.size();
+        slice.len = len;
+        slices_tick_ = 0;
+      }
+      else
+      {
+        slices_[slices_head_].len += len;
+        slices_tick_++;
+      }
+    }
+  }
+
+  VESSL_INLINE sample_t process_slice(const sample_t& in)
+  {
+    sample_t out = in;
+    if (slice_enabled_)
+    {
+      T* data = buffer_.data();
+      size_t sz = buffer_.size();
+      size_t x = static_cast<size_t>(slice_pos_);
+      size_t y = x+1;
+      const sample_t& a = data[(x+sz)%sz];
+      const sample_t& b = data[(y+sz)%sz]; 
+      analog_t        t = slice_pos_ - x;
+      out = a + (b-a)*t;
+      
+      slice_pos_ += slice_rate_;
+      const analog_t len = slice_end_ - slice_start_;
+      if (slice_pos_ < slice_start_)
+      {
+        slice_pos_ += len;
+        slice_amp_ *= slice_damp_;
+      }
+      else if (slice_pos_ > slice_end_)
+      {
+        slice_pos_ -= len;
+        slice_amp_ *= slice_damp_;
+      }
+    }
+    else
+    {
+      buffer_.write(in);
+    }
+    return out;
+  }
+
+  VESSL_INLINE void set_crush(analog_t amt)
   {
     float sr   = clockable::sample_rate_;
     float bits = amt > 0.001f ? (16.f - amt*12.0f) : 24;
@@ -123,13 +178,16 @@ protected:
     crush_.rate() = rate;
   }
 
-  void start_slice()
+  VESSL_INLINE void start_slice()
   {
     // 2 ticks is half a beat in our reckoning
-    int slice_ticks = 2;
+    static constexpr int st[] = { 4, 6, 8, 12 };
+    static constexpr int stc = sizeof(st) / sizeof(int);
+    int slice_ticks = st[vessl::math::random::range(0, stc)];
+    // for how long in samples this slice should be played back
     slice_dur_      = duration_t(clockable::tempo_.samples * slice_ticks);
     // we choose one of the previous eight slice_dur_ sections to slice (i.e. a section from the last 4/4 measure)
-    int slice_idx = vessl::math::random::range(1, 9);
+    int slice_idx = vessl::math::random::range(0, slice_count);
     int slice_clf = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
     int slice_clt = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
     int rate_min  = vessl::math::max(params_.rate_min.value, 1);
@@ -139,17 +197,17 @@ protected:
     analog_t crush_f = vessl::math::random::range(params_.crush_min.value, params_.crush_max.value);
     analog_t crush_t = vessl::math::random::range(params_.crush_min.value, params_.crush_max.value); 
 
-    slice_start_ = slice_idx * slice_dur_.samples;
+    const slice& slice = slices_[slice_idx];
+    slice_start_ = slice.idx;
     slice_amp_   = 1.f;
     slice_damp_  = 1.0f - vessl::math::random::range(0.f, params_.damp_max.value);
 
-    analog_t slice_dur_f = clockable::tempo_.samples * 0.25f * slice_clf;
-    analog_t slice_dur_t = clockable::tempo_.samples * 0.25f * slice_clt;
+    analog_t slice_dur_f = vessl::math::max(2.f, clockable::tempo_.samples * 0.25f * slice_clf);
+    analog_t slice_dur_t = vessl::math::max(2.f, clockable::tempo_.samples * 0.25f * slice_clt);
     
-    freeze_.position()   = slice_start_ - slice_dur_f;
-    freeze_.duration()   = duration_t(slice_dur_f);
-    freeze_.rate()       = static_cast<float>(slice_rtf) * slice_dir;
-    freeze_.reset();
+    slice_end_           = slice_start_ + slice_dur_f;
+    slice_rate_          = static_cast<float>(slice_rtf) * slice_dir;
+    slice_pos_           = slice_dir > 0 ? slice_start_ : slice_end_;
     
     rate_ramp_.from()     = static_cast<float>(slice_rtf) * slice_dir;
     rate_ramp_.to()       = static_cast<float>(slice_rtt) * slice_dir;
@@ -187,8 +245,8 @@ protected:
   }
 
 private:
+  Buffer buffer_;
   // processors
-  Freeze freeze_;
   BitCrush crush_;
 
   // paramers and state
@@ -204,12 +262,27 @@ private:
     vessl::analog_p damp_max;
   } params_;
 
-  duration_t slice_dur_;
+  struct slice
+  {
+    // index in buffer_ where this slice begins
+    size_t idx = 0;
+    // length in samples of the slice 
+    // (based on value of tempo_duration.samples at the time of recording)
+    size_t len = 2;
+  };
+  
+  slice slices_[slice_count];
+  int slices_head_, slices_tick_;
+
+  binary_t   slice_enabled_;
   analog_t   slice_start_;
+  analog_t   slice_end_;
+  analog_t   slice_pos_;
+  duration_t slice_dur_;
+  analog_t   slice_rate_;
   analog_t   slice_amp_;
   analog_t   slice_damp_;
 
-  Parameter freeze_enabled_; // cache freeze's enabled parameter because we need to access it so much.
   Ramp rate_ramp_;
   Ramp slice_ramp_;
   Ramp crush_ramp_;

@@ -29,7 +29,7 @@ DESCRIPTION:
 template<typename T>
 class Cutup : public vessl::unit_processor<T>
             , public vessl::time::clockable
-            , public vessl::plist<9>
+            , public vessl::plist<10>
 {
   using binary_t = vessl::binary_t;
   using analog_t = vessl::analog_t;
@@ -57,6 +57,7 @@ public:
   , slice_dur_(0)
   , slice_amp_(1.f)
   , slice_damp_(1.f)
+  , glitch_scale_(0.f)
   , rate_ramp_(sample_rate)
   , slice_ramp_(sample_rate)
   , crush_ramp_(sample_rate)
@@ -82,6 +83,7 @@ public:
   Parameter crush_max() const { return params_.crush_max("crush max", 'C'); }
   // range for how quickly single slice is damped over time [0,1]
   Parameter damp_max() const { return params_.damp_max("damp max", 'D'); }
+  Parameter glitch() const { return params_.glitch("glich", 'g'); }
 
   // when enabled, call to start a new slice at the next clock tick
   VESSL_INLINE void cut() { slice_requested_ = true; }
@@ -122,6 +124,10 @@ public:
     }
     sample_t out;
     process_slice(in) >> crush_ >> out;
+    if (params_.glitch.value)
+    {
+      out = vessl::math::xore(out, in*glitch_scale_);
+    }
     return out * slice_amp_;
   }
 
@@ -151,6 +157,8 @@ protected:
       slice_dur_.samples = sample_delay;
       slice_requested_ = false;
     }
+
+    glitch_scale_ = vessl::math::random::range(-0.75f, 0.75f);
   }
 
   VESSL_INLINE sample_t process_slice(const sample_t& in)
@@ -260,6 +268,7 @@ protected:
       case 6: return crush_min();
       case 7: return crush_max();
       case 8: return damp_max();
+      case 9: return glitch();
     }
 
     return Parameter::none();
@@ -282,6 +291,7 @@ private:
     vessl::analog_p crush_min;
     vessl::analog_p crush_max;
     vessl::analog_p damp_max;
+    vessl::binary_p glitch;
   } params_;
 
   struct slice
@@ -306,6 +316,7 @@ private:
   analog_t   slice_rate_;
   analog_t   slice_amp_;
   analog_t   slice_damp_;
+  analog_t   glitch_scale_;
 
   Ramp rate_ramp_;
   Ramp slice_ramp_;

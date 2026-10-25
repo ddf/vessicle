@@ -51,6 +51,7 @@ public:
   , crush_(sample_rate, sample_rate)
   , slices_head_(slice_count - 1)
   , slices_tick_(slice_tick_len)
+  , slice_countdown_(-1)
   , slice_enabled_(false)
   , slice_requested_(false)
   , slice_started_(false)
@@ -95,33 +96,38 @@ public:
 
   sample_t process(const sample_t& in) override
   {
-    clockable::tick();
-    binary_t enable = params_.enabled.value;
-    if (enable && !slice_enabled_)
-    {
-      slice_enabled_ = true;
-      slice_started_ = true;
-      start_slice();
-    }
-    else if (!enable && slice_enabled_)
-    {
-      slice_enabled_ = false;
-      slice_started_ = false;
-      slice_amp_ = 1.f;
-      set_crush(0);
-    }
-    else if (slice_enabled_)
+    clockable::tick();   
+    slice_started_ = false;
+
+    if (slice_enabled_)
     {
       analog_t dur = slice_ramp_.generate();
       slice_end_ = slice_start_ + dur;
       slice_rate_ = rate_ramp_.generate<vessl::math::easing::expo::out>();
       set_crush(crush_ramp_.generate());
-      slice_started_ = --slice_dur_.samples <= 0;
-      if (slice_started_)
+      if (--slice_dur_.samples <= 0)
       {
-        start_slice();
+        // stop slicing if we were disabled externally
+        slice_enabled_ = params_.enabled.value;
+        if (slice_enabled_)
+        {
+          start_slice();
+          slice_started_ = true;
+        }
+        else
+        {
+          slice_amp_ = 1.f;
+          set_crush(0);
+        }
       }
     }
+    else if (slice_countdown_ && --slice_countdown_ == 0)
+    {
+      start_slice();
+      slice_started_ = true;
+      slice_enabled_ = true;
+    }
+
     sample_t out;
     process_slice(in) >> crush_ >> out;
     if (params_.glitch.value)
@@ -134,6 +140,12 @@ public:
 protected:
   VESSL_INLINE void tock(period_t sample_delay) override
   {
+    binary_t enable = params_.enabled.value;
+    if (enable && !slice_enabled_)
+    {
+      slice_countdown_ = sample_delay;
+    }
+
     if (!slice_enabled_)
     {
       int len = vessl::math::max(static_cast<int>(tempo_.samples), 4);
@@ -152,9 +164,17 @@ protected:
         slices_tick_++;
       }
     }
-    else if (slice_requested_)
+    
+    if (slice_requested_)
     {
-      slice_dur_.samples = sample_delay;
+      if (slice_enabled_)
+      {
+        slice_dur_.samples = sample_delay;
+      }
+      else
+      {
+        slice_countdown_ = sample_delay;
+      }
       slice_requested_ = false;
     }
 
@@ -307,6 +327,8 @@ private:
   slice slices_[slice_count];
   int slices_head_, slices_tick_;
 
+  // samples until we should enable and start a slice
+  int        slice_countdown_;
   binary_t   slice_enabled_;
   binary_t   slice_requested_;
   binary_t   slice_started_;

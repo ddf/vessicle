@@ -41,11 +41,11 @@ class Cutup : public vessl::unit_processor<T>
   using Ramp     = vessl::generators::ramp<analog_t>;
   using Parameter = vessl::parameter;
 
-  static constexpr int slice_count    = 16;
+  static constexpr int slice_count    = 32;
   static constexpr int slice_tick_len = 2;
 
 public:
-  Cutup(analog_t sample_rate, T* buffer, size_t buffer_size)
+  Cutup(analog_t sample_rate, sample_t* buffer, size_t buffer_size)
   : clockable(sample_rate, 16, sample_rate / 4, 120.f)
   , buffer_(buffer, buffer_size)
   , crush_(sample_rate, sample_rate)
@@ -144,7 +144,7 @@ protected:
 
         slice.idx = (buffer_.get_write_index() + sample_delay + buffer_.size() - len) % buffer_.size();
         slice.len = len;
-        slices_tick_ = 0;
+        slices_tick_ = 1;
       }
       else
       {
@@ -214,6 +214,7 @@ protected:
     int slice_ticks = st[sth + offset];
     // for how long in samples this slice should be played back
     slice_dur_      = duration_t(clockable::tempo_.samples * slice_ticks);
+
     // we choose one of the previous eight slice_dur_ sections to slice (i.e. a section from the last 4/4 measure)
     int slice_idx = vessl::math::random::range(0, slice_count);
     int slice_clf = 1 << vessl::math::random::range(params_.slice_min.value, params_.slice_max.value);
@@ -228,10 +229,10 @@ protected:
     const slice& slice = slices_[slice_idx];
     slice_start_ = slice.idx;
     slice_amp_   = 1.f;
-    slice_damp_  = 1.0f - vessl::math::random::range(0.f, params_.damp_max.value);
+    slice_damp_  = 1.f - vessl::math::random::range(0.f, params_.damp_max.value);
 
-    analog_t slice_dur_f = vessl::math::max(2.f, clockable::tempo_.samples * 0.25f * slice_clf);
-    analog_t slice_dur_t = vessl::math::max(2.f, clockable::tempo_.samples * 0.25f * slice_clt);
+    analog_t slice_dur_f = vessl::math::max(2.f, clockable::tempo_.samples * 0.125f * slice_clf);
+    analog_t slice_dur_t = vessl::math::max(2.f, clockable::tempo_.samples * 0.125f * slice_clt);
     
     slice_end_           = slice_start_ + slice_dur_f;
     slice_rate_          = static_cast<float>(slice_rtf) * slice_dir;

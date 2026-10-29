@@ -24,12 +24,23 @@ public:
   T generate() override
   {
     tick();
-    if (params_.carry.value > 0)
-    {
-      params_.carry.value -= 1;
-    }
     return value_;
   };
+
+  T add(T amount)
+  {
+    value_ += amount;
+    if (value_ > params_.max.value)
+    {
+      params_.carry.value = value_ - params_.max.value;
+      value_ = value_ % (params_.max.value + 1);
+    }
+    else
+    {
+      params_.carry.value = 0;
+    }
+    return params_.carry.value;
+  }
 
   [[nodiscard]] Parameter increment() const { return params_.inc("Increment", 'i'); }
   [[nodiscard]] Parameter maximum() const { return params_.max("Maximum", 'm'); }
@@ -41,12 +52,7 @@ public:
 protected:
   void tock(period_t sample_delay)
   {
-    value_ += params_.inc.value;
-    if (value_ > params_.max.value)
-    {
-      params_.carry.value = value_ - params_.max.value;
-      value_ = value_ % params_.max.value;
-    }
+    add(params_.inc.value);
   }
 
   [[nodiscard]] Parameter element_at(size_t index) const override

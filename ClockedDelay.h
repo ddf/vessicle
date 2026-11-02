@@ -14,9 +14,9 @@ class ClockedDelay : public vessl::unit_processor<T>
   using Parameter = vessl::parameter;
 
 public:
-  ClockedDelay(Array delay_buffer, analog_t sample_rate, period_t clock_period_min, period_t clock_period_max, analog_t bpm = 60, analog_t feedback_amount = 0)
+  ClockedDelay(Array delay_buffer, analog_t sample_rate, period_t clock_period_min, period_t clock_period_max, analog_t bpm = 60, analog_t feedback_amount = 0, vessl::unit_processor<T>* feedback_proc = nullptr)
   : clockable(sample_rate, clock_period_min, clock_period_max, bpm)
-  , delay_(delay_buffer, sample_rate_, tempo_.to_seconds(sample_rate), feedback_amount)
+  , delay_(delay_buffer, sample_rate_, tempo_.to_seconds(sample_rate), feedback_amount, feedback_proc)
   {
     params_.ratio.value = 1.f;
   }

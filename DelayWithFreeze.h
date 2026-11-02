@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vessl/vessl.h"
+#include "vessl/vessl_units.h"
 
 template<typename T>
 class DelayWithFreeze : public vessl::unit_processor<T>, protected vessl::plist<5>
